@@ -60,6 +60,7 @@ function createDirector({
     );
   };
 
+ 
   function tick() {
     if (game.ending) return [];
 
@@ -82,12 +83,16 @@ function createDirector({
       game.lastTick = current;
       game.danger = Math.min(10, game.danger + 1);
 
-     if (
-  game.danger >= 10 &&
-  game.injured &&
-  game.room !== 'keypad'
-) {
+      // THE LISTENER KILLS MARROW
+      if (
+        game.danger >= 10 &&
+        game.injured &&
+        game.room !== 'keypad'
+      ) {
+        return [death()];
+      }
 
+      // THE LISTENER INJURES MARROW
       if (game.danger >= 4 && !game.injured) {
         game.injured = true;
         remember('The Listener injured MARROW');
@@ -98,6 +103,7 @@ function createDirector({
         )];
       }
 
+      // THE LISTENER APPROACHES
       return [event(
         'Three knocks. Metal scrapes across the floor.',
         'knocks'
