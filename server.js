@@ -450,20 +450,43 @@ if (msg.type === 'setup') {
           !isNegative &&
           /\b(unlock|open|use|escape|try)\b/.test(command);
 
+        
+        // The Listener follows loud metallic sounds.
+        const makesDistraction =
+          !isNegative &&
+          /\b(throw|toss|drop|bang|slam|rattle)\b/.test(command) &&
+          /\b(metal|pipe|can|bottle|tool|scrap|wrench)\b/.test(command);
+
         if (
           !episode.ending &&
-          episode.stage === 'chasing' &&
-          wantsStairwell &&
-          triesToEscape
+          episode.stage === 'stairwell_jammed' &&
+          makesDistraction
         ) {
-          if (episode.hasRedKey) {
+          episode.monsterLured = true;
+          episode.stage = 'monster_distracted';
+          episode.trust = Math.min(10, episode.trust + 1);
+        }
+
+        if (
+          !episode.ending &&
+          wantsStairwell &&
+          triesToEscape &&
+          ['chasing', 'stairwell_jammed',
+           'monster_distracted', 'trapped_at_stairwell']
+            .includes(episode.stage)
+        ) {
+          if (!episode.hasRedKey) {
+            episode.stage = 'trapped_at_stairwell';
+            episode.danger = Math.min(10, episode.danger + 3);
+          } else if (episode.monsterLured) {
             episode.stage = 'escaped';
             episode.ending = 'survived';
           } else {
-            episode.stage = 'trapped_at_stairwell';
-            episode.danger = Math.min(10, episode.danger + 3);
+            episode.stage = 'stairwell_jammed';
+            episode.danger = Math.min(10, episode.danger + 2);
           }
         }
+
 
         const liveInstructions = `${STORY_INSTRUCTIONS}
 
@@ -475,6 +498,26 @@ if (msg.type === 'setup') {
         Danger level: ${episode.danger}
 
         Chapter ending: ${episode.ending || 'none'}
+        
+
+        THE MONSTER — THE LISTENER:
+        A tall, wet, distorted humanoid with a dragging
+        foot and an unnaturally stretched face.
+        Its signature is three knocks followed by scraping.
+        It follows loud sounds and can mimic voices.
+        Reveal its appearance gradually, never all at once.
+
+        If stage is stairwell_jammed:
+        The red key fits, but the heavy door is jammed.
+        The Listener is approaching. Panic and resist
+        reckless instructions. The caller must suggest
+        making a loud metallic distraction elsewhere.
+
+        If stage is monster_distracted:
+        The metallic noise has drawn The Listener away.
+        The stairwell door can now be opened with the key.
+        Urgently ask the caller if you should try again.
+        Do not claim you have escaped yet.
 
         If stage is escaped:
         The red key unlocked the stairwell.
