@@ -308,6 +308,78 @@ const episode = {
 
   let pending = Promise.resolve();
   let closed = false;
+  
+    // THE LISTENER — Independent survival clock
+    // Runs even when the caller is silent.
+
+    const listenerClock = setInterval(() => {
+      if (closed) return;
+
+      const events = director.tick();
+
+      for (const outcome of events) {
+        const state = director.snapshot();
+
+        // Don't have MARROW repeat the same warning
+        // every thirty seconds.
+        if (
+          outcome.effect === 'knocks' &&
+          state.danger % 2 !== 0
+        ) {
+          continue;
+        }
+
+        const dialogue = {
+          knocks:
+            "Shhh... wait. Did you hear that? " +
+            "Three knocks. It's moving again.",
+
+          attack:
+            "AHHH! SHIT! MY LEG! " +
+            "Something hit me! I can't stand up!",
+
+          death:
+            "NO! NO, GET OFF ME! " +
+            "HELP ME! PLEASE! AAAAAH!"
+        };
+
+        const line = dialogue[outcome.effect];
+        if (!line) continue;
+
+        generateMarrowAudio(line)
+          .then(mediaUrl => {
+            if (closed) return;
+
+            // Don't deliver old warnings after the ending.
+            if (
+              outcome.effect !== 'death' &&
+              director.snapshot().ending
+            ) {
+              return;
+            }
+
+            send({
+              type: 'play',
+              source: mediaUrl,
+              loop: 1,
+              interruptible: outcome.effect !== 'death',
+              preemptible: true
+            });
+          })
+          .catch(error => {
+            console.error(
+              'Listener audio error:',
+              error.message
+            );
+          });
+      }
+    }, 1000);
+
+    // Stop the monster clock when the call ends.
+    ws.once('close', () => {
+      clearInterval(listenerClock);
+    });
+
   let requestVersion = 0;
 
   function send(message) {
