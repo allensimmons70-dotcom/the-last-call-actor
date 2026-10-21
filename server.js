@@ -668,25 +668,11 @@ if (msg.type === 'dtmf') {
   }
 }
 
-  // Temporary keypad feedback.
-  // We'll replace this with cinematic beeps.
-  const feedback =
-    msg.digit === '*'
-      ? 'Cleared.'
-      : result.effect === 'green'
-        ? 'Green.'
-        : 'Red. Start over.';
-
-  send({
-    type: 'text',
-    token: feedback,
-    last: true,
-    interruptible: true,
-    preemptible: true
-  });
-
-  return;
-}
+ 
+    // Ignore messages that are not completed speech.
+    if (typeof words !== 'string' || !words.trim()) {
+      return;
+    }
 
 
     const input = words.trim().slice(0, 500);
