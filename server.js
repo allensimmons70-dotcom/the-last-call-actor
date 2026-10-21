@@ -9,6 +9,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const WebSocket = require('ws');
 const OpenAI = require('openai');
+const { createDirector } = require('./listener-director');
 const twilio = require('twilio');
 
 const PORT = Number(process.env.PORT || 10000);
@@ -294,6 +295,7 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws) => {
 
   const history = [];
+  const director = createDirector();
   
 const episode = {
   startedAt: Date.now(),
