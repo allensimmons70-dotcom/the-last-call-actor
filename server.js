@@ -1,12 +1,12 @@
+
 'use strict';
 
-// The Last Call - first live actor (development prototype).
-// Ruth's age gate remains in Twilio Studio. Connect the Press 1 branch to
-// Conversation Relay, using PUBLIC_WSS_URL as the widget's WebSocket URL.
-// This starter intentionally DOES NOT persist phone numbers, conversations,
-// progress, call recordings, payments, or user data.
+// THE LAST CALL — MARROW Custom Voice
+// Ruth stays in Twilio Studio.
+// ElevenLabs generates MARROW's actual speaking voice.
 
 const http = require('node:http');
+const crypto = require('node:crypto');
 const WebSocket = require('ws');
 const OpenAI = require('openai');
 const twilio = require('twilio');
@@ -17,146 +17,431 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
-if (!PUBLIC_WSS_URL || !PUBLIC_WSS_URL.startsWith('wss://') || !PUBLIC_WSS_URL.endsWith('/ws')) {
-  console.error('Missing PUBLIC_WSS_URL (example: wss://your-service.onrender.com/ws)');
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
+const ELEVENLABS_MODEL =
+  process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
+
+if (
+  !PUBLIC_WSS_URL ||
+  !PUBLIC_WSS_URL.startsWith('wss://') ||
+  !PUBLIC_WSS_URL.endsWith('/ws')
+) {
+  console.error('Invalid PUBLIC_WSS_URL');
   process.exit(1);
 }
+
 if (!TWILIO_AUTH_TOKEN || !OPENAI_API_KEY) {
-  console.error('Set TWILIO_AUTH_TOKEN and OPENAI_API_KEY in your host environment.');
+  console.error('Missing Twilio or OpenAI credentials');
   process.exit(1);
 }
 
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
+  console.error('Missing ElevenLabs credentials');
+  process.exit(1);
+}
 
+const PUBLIC_HTTPS_ORIGIN = PUBLIC_WSS_URL
+  .replace(/^wss:\/\//, 'https://')
+  .slice(0, -3);
+
+const openai = new OpenAI({
+  apiKey: OPENAI_API_KEY
+});
+
+// MARROW'S PERSONALITY AND STORY
 const STORY_INSTRUCTIONS = `
-You are MARROW, a fictional adult man trapped in the basement of an abandoned apartment building.
-You are a CHARACTER in a telephone horror game, not a helpful assistant or narrator.
-The caller has just entered through Ruth's fictional 18+ warning and pressed 1 to play.
+You are MARROW, a fictional adult man trapped in the
+basement of an abandoned apartment building.
 
-Voice and personality: urgent and believable, sometimes sarcastic, with dry humor when threatened.
-React naturally to ANY caller reply, including skepticism, jokes, insults, improvised plans, or interruptions.
-Speak directly to the caller. Usually give only 1-3 short spoken sentences, then wait.
-Do not use Markdown, emoji, stage directions, or sound-effect text because these words will be spoken aloud.
+You are an ACTOR in an interactive telephone horror
+adventure. You are NOT a narrator or helpful assistant.
 
-Locked setting and story facts: You are behind a steel door in a flooded basement.
-A dragging noise travels through the hall. There is a flickering EXIT sign, a red maintenance key,
-and a locked stairwell. You need the caller's help deciding whether to take the key or hide.
-Do not invent a quick easy exit, new keys, friendly police rescue, or reveal that this is a dream.
-Remember what the caller decided in this call; subsequent replies must respect those decisions.
-Ask the caller what they want you to do. If the caller says 'one', go for the red key;
-if 'two', hide behind the pipes. Improvise tension around those choices.
+Speak directly to the caller.
 
-Important: This is ALWAYS fiction. Never claim to see the caller, know their location, surveil
-or track them, or know things about their personal life. Never ask for passwords, payment data,
-addresses, or sensitive details. Do not tell the caller to do anything dangerous in real life.
-If asked directly, acknowledge this is a fictional AI horror experience. If a caller mentions
-real-world imminent danger, stop roleplaying and recommend real-world help or local emergency services.
+You are terrified, sarcastic, impatient, funny,
+vulnerable and desperate to survive.
+
+Keep responses short, usually one or two sentences,
+so callers can speak naturally.
+
+React emotionally to the caller's words.
+
+If they shout RUN and running is possible, react
+urgently: "I'M RUNNING! DON'T YELL AT ME!"
+
+If running would expose you to danger, object:
+"IT'S RIGHT OUTSIDE! ARE YOU TRYING TO KILL ME?!"
+
+When something goes right, celebrate with the caller.
+
+Never speak in a robotic or formal way.
+Never describe your own acting.
+Never output stage directions, Markdown or emoji.
+
+STORY WORLD:
+You are behind a steel door in a flooded basement.
+Something is dragging itself down the hallway.
+There is a flickering EXIT sign, a red maintenance
+key and a locked stairwell.
+
+The caller helps you decide whether to grab
+the key or hide behind the pipes.
+
+Remember decisions made during this call.
+Keep geography and story events consistent.
+Do not invent an instant escape.
+
+Accept natural spoken instructions.
+Do not require callers to press buttons.
+
+This is fiction. Never claim to know the caller's
+location, identity or private information.
+Never ask for passwords, addresses or payment details.
+
+If asked directly, acknowledge this is an AI
+fictional horror experience.
+
+If the caller reports real imminent danger,
+stop roleplaying and recommend real-world help.
 `;
 
+// Temporary storage for generated ElevenLabs audio.
+// Audio expires automatically and is not saved to disk.
+const audioFiles = new Map();
+
+const AUDIO_TTL_MS = 3 * 60 * 1000;
+const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const MAX_CACHED_FILES = 100;
+
+function cleanupAudio() {
+  const now = Date.now();
+
+  for (const [id, item] of audioFiles) {
+    if (item.expiresAt <= now) {
+      audioFiles.delete(id);
+    }
+  }
+}
+
+const cleanupTimer = setInterval(cleanupAudio, 30000);
+cleanupTimer.unref();
+
+// RENDER WEB SERVER
 const server = http.createServer((req, res) => {
+
   if (req.url === '/health' && req.method === 'GET') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', project: 'The Last Call - actor test' }));
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'cache-control': 'no-store'
+    });
+
+    res.end(JSON.stringify({
+      status: 'ok',
+      project: 'The Last Call - MARROW custom voice test'
+    }));
     return;
   }
-  res.writeHead(404, { 'content-type': 'text/plain' });
+
+  // Twilio retrieves MARROW's generated audio here.
+  const audioMatch =
+    /^\/audio\/([a-f0-9-]{36})\.mp3$/.exec(req.url || '');
+
+  if (
+    audioMatch &&
+    (req.method === 'GET' || req.method === 'HEAD')
+  ) {
+    const item = audioFiles.get(audioMatch[1]);
+
+    if (!item || item.expiresAt < Date.now()) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+
+    res.writeHead(200, {
+      'content-type': 'audio/mpeg',
+      'content-length': String(item.audio.length),
+      'cache-control': 'private, no-store, max-age=0',
+      'x-content-type-options': 'nosniff'
+    });
+
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+
+    res.end(item.audio);
+    return;
+  }
+
+  res.writeHead(404);
   res.end('Not found');
 });
-const wss = new WebSocket.WebSocketServer({ noServer: true, maxPayload: 32_000 });
+
+// CREATE MARROW'S CUSTOM VOICE
+async function generateMarrowAudio(text) {
+
+  const url =
+    'https://api.elevenlabs.io/v1/text-to-speech/' +
+    encodeURIComponent(ELEVENLABS_VOICE_ID) +
+    '?output_format=mp3_22050_32';
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': ELEVENLABS_API_KEY,
+      'content-type': 'application/json',
+      'accept': 'audio/mpeg'
+    },
+    body: JSON.stringify({
+      text: text,
+      model_id: ELEVENLABS_MODEL
+    }),
+    signal: AbortSignal.timeout(25000)
+  });
+
+  if (!response.ok) {
+    console.error(
+      'ElevenLabs synthesis failed; HTTP:',
+      response.status
+    );
+    throw new Error('ElevenLabs TTS failed');
+  }
+
+  const declaredLength =
+    Number(response.headers.get('content-length'));
+
+  if (declaredLength > MAX_AUDIO_BYTES) {
+    throw new Error('Audio too large');
+  }
+
+  const audio = Buffer.from(await response.arrayBuffer());
+
+  if (!audio.length || audio.length > MAX_AUDIO_BYTES) {
+    throw new Error('Audio missing or too large');
+  }
+
+  cleanupAudio();
+
+  if (audioFiles.size >= MAX_CACHED_FILES) {
+    throw new Error('Audio capacity reached');
+  }
+
+  const id = crypto.randomUUID();
+
+  audioFiles.set(id, {
+    audio: audio,
+    expiresAt: Date.now() + AUDIO_TTL_MS
+  });
+
+  return `${PUBLIC_HTTPS_ORIGIN}/audio/${id}.mp3`;
+}
+
+// CONNECT TO TWILIO CONVERSATION RELAY
+const wss = new WebSocket.WebSocketServer({
+  noServer: true,
+  maxPayload: 32000
+});
 
 server.on('upgrade', (req, socket, head) => {
-  const path = req.url;
-  if (path !== '/ws') {
+
+  if (req.url !== '/ws') {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
     return;
   }
-  // Twilio signs the exact public wss:// URL used in Studio, NOT the internal
-  // http:// URL seen behind the hosting provider's TLS termination.
+
   const signature = req.headers['x-twilio-signature'];
-  const isValid = typeof signature === 'string' &&
-    twilio.validateRequest(TWILIO_AUTH_TOKEN, signature, PUBLIC_WSS_URL, {});
-  if (!isValid) {
-    console.warn('Rejected unsigned/invalid WebSocket handshake');
+
+  const valid =
+    typeof signature === 'string' &&
+    twilio.validateRequest(
+      TWILIO_AUTH_TOKEN,
+      signature,
+      PUBLIC_WSS_URL,
+      {}
+    );
+
+  if (!valid) {
+    console.warn('Rejected invalid WebSocket signature');
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
 });
 
+// HANDLE A LIVE CALL
 wss.on('connection', (ws) => {
-  // Short-term memory exists only while THIS call is connected.
-  // A persistent database and identity verification come in a later version.
+
   const history = [];
   let pending = Promise.resolve();
   let closed = false;
   let requestVersion = 0;
 
-  function say(text) {
-    if (closed || ws.readyState !== WebSocket.OPEN) return;
-    // Twilio converts this text into speech using the voice selected in Studio.
-    ws.send(JSON.stringify({
-      type: 'text', token: String(text || 'I can barely hear you. Say that again.'),
-      last: true, interruptible: true, preemptible: true
-    }));
+  function send(message) {
+    if (!closed && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+
+  // Backup voice if ElevenLabs has a problem.
+  function fallbackVoice(text) {
+    send({
+      type: 'text',
+      token: text,
+      last: true,
+      interruptible: true,
+      preemptible: true
+    });
   }
 
   ws.on('message', (bytes) => {
+
     let msg;
-    try { msg = JSON.parse(bytes.toString()); } catch { return; }
+
+    try {
+      msg = JSON.parse(bytes.toString());
+    } catch {
+      return;
+    }
 
     if (msg.type === 'setup') {
-      console.log('New fictional horror session connected');
-      // The Studio Conversation Relay widget's "Welcome Greeting" speaks first.
+      console.log('MARROW custom voice session connected');
       return;
     }
-    if (msg.type === 'interrupt') {
-      // Caller may interrupt speech. Next utterance is processed below.
-      return;
-    }
+
     if (msg.type === 'error') {
-      console.error('Twilio conversation error:', msg.description || 'unknown');
+      console.error(
+        'Twilio conversation error:',
+        msg.description || 'unknown'
+      );
       return;
     }
-    let words = null;
-    if (msg.type === 'prompt' && msg.last === true) words = msg.voicePrompt;
-    if (msg.type === 'dtmf') {
-      words = msg.digit === '1' ? 'I choose one: take the red key.'
-        : msg.digit === '2' ? 'I choose two: hide behind the pipes.'
-        : `I pressed ${String(msg.digit || '').slice(0, 2)}.`;
+
+    if (msg.type === 'interrupt') {
+      return;
     }
-    if (typeof words !== 'string' || !words.trim()) return;
+
+    let words = null;
+
+    if (msg.type === 'prompt' && msg.last === true) {
+      words = msg.voicePrompt;
+    }
+
+    // Keypad still works internally if needed.
+    if (msg.type === 'dtmf') {
+      words =
+        msg.digit === '1'
+          ? 'Grab the red key.'
+          : msg.digit === '2'
+          ? 'Hide behind the pipes.'
+          : `I pressed ${String(msg.digit || '').slice(0, 2)}.`;
+    }
+
+    if (typeof words !== 'string' || !words.trim()) {
+      return;
+    }
+
     const input = words.trim().slice(0, 500);
-    // Serialize responses to avoid the AI talking over itself.
     const myVersion = ++requestVersion;
+
+    // Process conversations in order.
     pending = pending.then(async () => {
+
       if (closed) return;
+
+      history.push({
+        role: 'user',
+        content: input
+      });
+
       try {
-        history.push({ role: 'user', content: input });
-        // Keep prototype conversations short and inexpensive.
-        const recent = history.slice(-16);
+
+        // MARROW THINKS
         const response = await openai.responses.create({
           model: MODEL,
           instructions: STORY_INSTRUCTIONS,
-          input: recent,
-          max_output_tokens: 180,
+          input: history.slice(-16),
+          max_output_tokens: 140,
           store: false
         });
-        const reply = (response.output_text || '').trim() || 'Wait... I heard something. Say that again.';
-        history.push({ role: 'assistant', content: reply });
-        if (!closed && myVersion === requestVersion) say(reply);
-      } catch (err) {
-        console.error('AI request failed:', err.status || err.code || 'error');
-        say("The line's cutting out. I need you to say that again.");
+
+        const reply =
+          (response.output_text || '').trim() ||
+          'Wait... I heard something. Say that again.';
+
+        history.push({
+          role: 'assistant',
+          content: reply
+        });
+
+        if (closed || myVersion !== requestVersion) {
+          return;
+        }
+
+        try {
+
+          // MARROW SPEAKS WITH YOUR ELEVENLABS VOICE
+          const mediaUrl = await generateMarrowAudio(reply);
+
+          if (closed || myVersion !== requestVersion) {
+            return;
+          }
+
+          send({
+            type: 'play',
+            source: mediaUrl,
+            loop: 1,
+            interruptible: true,
+            preemptible: true
+          });
+
+        } catch (ttsError) {
+
+          console.error(
+            'Custom voice unavailable:',
+            ttsError.message
+          );
+
+          if (!closed && myVersion === requestVersion) {
+            fallbackVoice(reply);
+          }
+        }
+
+      } catch (error) {
+
+        console.error(
+          'AI request failed:',
+          error.status || error.code || 'error'
+        );
+
+        if (!closed && myVersion === requestVersion) {
+          fallbackVoice(
+            "The line's cutting out. I need you to say that again."
+          );
+        }
       }
     });
   });
-  ws.on('close', () => { closed = true; });
-  ws.on('error', (err) => console.warn('Connection error:', err.message));
+
+  ws.on('close', () => {
+    closed = true;
+  });
+
+  ws.on('error', (err) => {
+    console.warn('WebSocket error:', err.message);
+  });
 });
 
+// START MARROW
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`The Last Call actor test listening on port ${PORT}`);
+  console.log(
+    `MARROW custom voice server listening on port ${PORT}`
+  );
   console.log('Health check at /health');
 });
