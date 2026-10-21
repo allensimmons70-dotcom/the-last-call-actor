@@ -147,32 +147,43 @@ cleanupTimer.unref();
 // RENDER WEB SERVER
 const server = http.createServer((req, res) => {
   
-  // Serve The Listener's sound effects
-  const match = /^\/sfx\/([a-z]+)\.wav$/.exec(
-    req.url || ''
-  );
+ 
+  // THE LISTENER — Public sound effects
+  // Must run BEFORE the normal 404 handler.
 
-  if (
-    match &&
-    (req.method === 'GET' || req.method === 'HEAD')
-  ) {
-    const audio = getListenerSound(match[1]);
+  const soundRequestPath = (req.url || '').split('?')[0];
+
+  if (soundRequestPath.startsWith('/sfx/')) {
+    const match = /^\/sfx\/([a-z]+)\.wav$/.exec(
+      soundRequestPath
+    );
+
+    const audio = match
+      ? getListenerSound(match[1])
+      : null;
 
     if (!audio) {
-      res.writeHead(404);
-      return res.end('Sound not found');
+      res.writeHead(404, {
+        'Content-Type': 'text/plain'
+      });
+      return res.end('Unknown sound');
     }
 
     res.writeHead(200, {
-      'content-type': 'audio/wav',
-      'content-length': String(audio.length),
-      'cache-control': 'public, max-age=3600'
+      'Content-Type': 'audio/wav',
+      'Content-Length': audio.length,
+      'Cache-Control': 'public, max-age=3600'
     });
 
-    return req.method === 'HEAD'
-      ? res.end()
-      : res.end(audio);
+    console.log('[SFX HTTP]', soundRequestPath);
+
+    if (req.method === 'HEAD') {
+      return res.end();
+    }
+
+    return res.end(audio);
   }
+
 
 
   if (req.url === '/health' && req.method === 'GET') {
@@ -338,76 +349,194 @@ const episode = {
   let pending = Promise.resolve();
   let closed = false;
   
-    // THE LISTENER — Independent survival clock
-    // Runs even when the caller is silent.
+    
+    // THE LISTENER — CINEMATIC AUDIO DIRECTOR
+
+    let lastCallerActivity = Date.now();
+    let nextAmbientAt = Date.now() + 11000;
+    let sceneBusyUntil = 0;
+    let lastWrongVoiceAt = 0;
+
+    const audioTimers = new Set();
+
+    function markCallerActivity() {
+      lastCallerActivity = Date.now();
+
+      nextAmbientAt = Math.max(
+        nextAmbientAt,
+        Date.now() + 8500
+      );
+    }
+
+    function scheduleAudio(delayMs, callback) {
+      const timer = setTimeout(() => {
+        audioTimers.delete(timer);
+
+        if (!closed) callback();
+      }, delayMs);
+
+      audioTimers.add(timer);
+    }
+
+    function playListenerSound(name) {
+      if (closed) return;
+
+      const source =
+        `${PUBLIC_HTTPS_ORIGIN}/sfx/${name}.wav`;
+
+      send({
+        type: 'play',
+        source,
+        loop: 1,
+        interruptible: true,
+        preemptible: true
+      });
+
+      console.log('[LISTENER AUDIO]', name);
+    }
+
+    async function speakListenerLine(
+      line,
+      allowEnding = false
+    ) {
+      try {
+        const source = await generateMarrowAudio(line);
+
+        if (closed) return;
+
+        if (
+          !allowEnding &&
+          director.snapshot().ending
+        ) return;
+
+        send({
+          type: 'play',
+          source,
+          loop: 1,
+          interruptible: true,
+          preemptible: true
+        });
+
+      } catch (error) {
+        console.error(
+          '[LISTENER VOICE]',
+          error.message
+        );
+      }
+    }
 
     const listenerClock = setInterval(() => {
       if (closed) return;
 
+      const now = Date.now();
       const events = director.tick();
 
       for (const outcome of events) {
         const state = director.snapshot();
 
-        // Don't have MARROW repeat the same warning
-        // every thirty seconds.
-        if (
-          outcome.effect === 'knocks' &&
-          state.danger % 2 !== 0
-        ) {
+        sceneBusyUntil = now + 7000;
+        nextAmbientAt = now + 8500;
+
+        // MARROW DIES
+        if (outcome.effect === 'death') {
+          sceneBusyUntil = now + 6500;
+
+          playListenerSound('attack');
+
+          scheduleAudio(1700, () => {
+            speakListenerLine(
+              'NO! GET IT OFF ME! HELP!',
+              true
+            );
+          });
+
+          scheduleAudio(4400, () => {
+            playListenerSound('death');
+          });
+
           continue;
         }
 
-        const dialogue = {
-          knocks:
-            "Shhh... wait. Did you hear that? " +
-            "Three knocks. It's moving again.",
+        // THE LISTENER INJURES MARROW
+        if (outcome.effect === 'attack') {
+          playListenerSound('attack');
 
-          attack:
-            "AHHH! SHIT! MY LEG! " +
-            "Something hit me! I can't stand up!",
-
-          death:
-            "NO! NO, GET OFF ME! " +
-            "HELP ME! PLEASE! AAAAAH!"
-        };
-
-        const line = dialogue[outcome.effect];
-        if (!line) continue;
-
-        generateMarrowAudio(line)
-          .then(mediaUrl => {
-            if (closed) return;
-
-            // Don't deliver old warnings after the ending.
-            if (
-              outcome.effect !== 'death' &&
-              director.snapshot().ending
-            ) {
-              return;
-            }
-
-            send({
-              type: 'play',
-              source: mediaUrl,
-              loop: 1,
-              interruptible: outcome.effect !== 'death',
-              preemptible: true
-            });
-          })
-          .catch(error => {
-            console.error(
-              'Listener audio error:',
-              error.message
+          scheduleAudio(1900, () => {
+            speakListenerLine(
+              'AHH! MY LEG! It hit me! ' +
+              'I can barely stand!'
             );
           });
+
+          continue;
+        }
+
+        // MONSTER APPROACHING
+        if (outcome.effect === 'knocks') {
+          const effect =
+            state.danger >= 6
+              ? 'footsteps'
+              : state.danger >= 3
+                ? 'scrape'
+                : 'knocks';
+
+          playListenerSound(effect);
+
+          if (state.danger === 2) {
+            scheduleAudio(2250, () => {
+              speakListenerLine(
+                'Shhh... did you hear that? ' +
+                'Three knocks. It is moving.'
+              );
+            });
+          }
+        }
       }
+
+      // No more ambience after Chapter 1 ends.
+      if (director.snapshot().ending) return;
+
+      // Avoid playing ambience over major scenes.
+      if (
+        now < sceneBusyUntil ||
+        now < nextAmbientAt
+      ) return;
+
+      // Give the caller time to speak naturally.
+      if (
+        now - lastCallerActivity < 8500
+      ) return;
+
+      const state = director.snapshot();
+
+      const effect =
+        state.room === 'keypad' ||
+        state.danger >= 7
+          ? 'footsteps'
+          : 'drone';
+
+      playListenerSound(effect);
+
+      nextAmbientAt = now + (
+        effect === 'drone'
+          ? 12500
+          : 7500
+      );
+
     }, 1000);
 
-    // Stop the monster clock when the call ends.
+    // Clean up when the caller hangs up.
     ws.once('close', () => {
       clearInterval(listenerClock);
+
+      for (const timer of audioTimers) {
+        clearTimeout(timer);
+      }
+
+      audioTimers.clear();
     });
+
+    
 
   let requestVersion = 0;
 
@@ -485,43 +614,59 @@ if (msg.type === 'setup') {
     let words = null;
 
     if (msg.type === 'prompt' && msg.last === true) {
+      markCallerActivity();
       words = msg.voicePrompt;
     }
 
     // Keypad still works internally if needed.
    
+
 if (msg.type === 'dtmf') {
+  markCallerActivity();
+
   const result = director.press(msg.digit);
 
-  // Ignore keypad presses until MARROW reaches
-  // the actual locked-door puzzle.
   if (!result.handled) return;
 
-  // Correct code: MARROW celebrates in his
-  // custom ElevenLabs voice.
   if (result.effect === 'success') {
-    const victory =
-      "YES! THE DOOR'S OPEN! OH MY GOD! " +
-      "WE DID IT! WE ACTUALLY MADE IT!";
+    playListenerSound('success');
 
-    generateMarrowAudio(victory)
-      .then(mediaUrl => {
-        if (!closed) {
-          send({
-            type: 'play',
-            source: mediaUrl,
-            loop: 1,
-            interruptible: true,
-            preemptible: true
-          });
-        }
-      })
-      .catch(() => {
-        if (!closed) fallbackVoice(victory);
-      });
+    scheduleAudio(1500, () => {
+      speakListenerLine(
+        "YES! THE DOOR'S OPEN! " +
+        "OH MY GOD! WE ACTUALLY MADE IT!",
+        true
+      );
+    });
 
     return;
   }
+
+  if (result.effect === 'green') {
+    playListenerSound('green');
+    return;
+  }
+
+  if (result.effect === 'red') {
+    playListenerSound('red');
+
+    // MARROW reacts, but not on every
+    // rapid keypress.
+    if (
+      Date.now() - lastWrongVoiceAt > 7000
+    ) {
+      lastWrongVoiceAt = Date.now();
+
+      scheduleAudio(550, () => {
+        speakListenerLine(
+          "SHIT! RED! START OVER!"
+        );
+      });
+    }
+
+    return;
+  }
+}
 
   // Temporary keypad feedback.
   // We'll replace this with cinematic beeps.
@@ -781,6 +926,9 @@ if (msg.type === 'dtmf') {
 
 
 const directorEvent = director.act(input);
+        if (directorEvent.effect === 'knocks') {
+  playListenerSound('knocks');
+}
 
         // MARROW THINKS
         const response = await openai.responses.create({
