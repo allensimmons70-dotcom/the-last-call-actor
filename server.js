@@ -80,7 +80,7 @@ Never describe your own acting.
 Never output stage directions, Markdown or emoji.
 
 STORY WORLD:
-You are behind a steel door in a flooded basement.
+Your adventure begins behind a steel door in a flooded basement. Your current location is determined by CURRENT GAME STATE.
 Something is dragging itself down the hallway.
 There is a flickering EXIT sign, a red maintenance
 key and a locked stairwell.
@@ -488,10 +488,86 @@ if (msg.type === 'setup') {
         }
 
 
+        // MARROW MEMORY — Last 5 completed story moves
+
+        // Once he escapes, don't let another
+        // command send him back into the basement.
+        if (episode.ending === 'survived') {
+          episode.stage = 'escaped';
+        }
+
+        const locations = {
+          basement: 'Flooded basement',
+          key_collected: 'Basement maintenance area',
+          hiding: 'Behind the rusty pipes',
+          chasing: 'Flooded corridor',
+          stairwell_jammed: 'Stairwell exit',
+          trapped_at_stairwell: 'Locked stairwell',
+          monster_distracted: 'Stairwell exit',
+          escaped: 'Outside the building'
+        };
+
+        const moveDescriptions = {
+          key_collected: 'Picked up the red key',
+          hiding: 'Hid behind the rusty pipes',
+          chasing: 'Ran into the flooded corridor',
+          stairwell_jammed: 'Reached the jammed stairwell',
+          trapped_at_stairwell: 'Failed to open the locked door',
+          monster_distracted: 'Distracted The Listener',
+          escaped: 'Escaped the basement and reached outside'
+        };
+
+        if (!episode.recentMoves) {
+          episode.recentMoves = [
+            'Started trapped in the flooded basement'
+          ];
+          episode.recordedState = 'basement|false|none';
+        }
+
+        const currentLocation =
+          locations[episode.stage] || 'Unknown location';
+
+        const stateSignature = [
+          episode.stage,
+          episode.hasRedKey,
+          episode.ending || 'none'
+        ].join('|');
+
+        if (stateSignature !== episode.recordedState) {
+          episode.recentMoves.push(
+            moveDescriptions[episode.stage] ||
+            `Reached ${currentLocation}`
+          );
+
+          episode.recentMoves =
+            episode.recentMoves.slice(-5);
+
+          episode.recordedState = stateSignature;
+        }
+
+        const recentMoveHistory =
+          episode.recentMoves.join('\n');
+
         const liveInstructions = `${STORY_INSTRUCTIONS}
 
         CURRENT GAME STATE:
         Location/state: ${episode.stage}
+        
+        CURRENT PHYSICAL LOCATION: ${currentLocation}
+
+        LAST FIVE COMPLETED STORY MOVES:
+        ${recentMoveHistory}
+
+        These are established events, not suggestions.
+        Never forget completed movements.
+        Never claim you are still in an earlier room.
+        Objects left behind remain in their old locations.
+        Only interact with objects physically accessible
+        from your CURRENT location.
+        Never rewind the story without a real reset.
+        If you have escaped, stay outside.
+        Do not invent new streets or missions.
+
         Has red maintenance key: ${episode.hasRedKey}
         Caller trust: ${episode.trust}
         
