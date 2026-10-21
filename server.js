@@ -442,6 +442,29 @@ if (msg.type === 'setup') {
           episode.danger = Math.min(10, episode.danger + 2);
         }
 
+        // CHAPTER 1 — THE STAIRWELL ESCAPE
+        const wantsStairwell =
+          /\b(stairwell|stairs|exit door)\b/.test(command);
+
+        const triesToEscape =
+          !isNegative &&
+          /\b(unlock|open|use|escape|try)\b/.test(command);
+
+        if (
+          !episode.ending &&
+          episode.stage === 'chasing' &&
+          wantsStairwell &&
+          triesToEscape
+        ) {
+          if (episode.hasRedKey) {
+            episode.stage = 'escaped';
+            episode.ending = 'survived';
+          } else {
+            episode.stage = 'trapped_at_stairwell';
+            episode.danger = Math.min(10, episode.danger + 3);
+          }
+        }
+
         const liveInstructions = `${STORY_INSTRUCTIONS}
 
         CURRENT GAME STATE:
@@ -450,6 +473,24 @@ if (msg.type === 'setup') {
         Caller trust: ${episode.trust}
         
         Danger level: ${episode.danger}
+
+        Chapter ending: ${episode.ending || 'none'}
+
+        If stage is escaped:
+        The red key unlocked the stairwell.
+        You made it outside alive!
+        Celebrate wildly with the caller.
+        Sound exhausted, relieved, emotional and grateful.
+        Make the victory feel EARNED.
+        Then notice something unsettling outside.
+
+        If stage is trapped_at_stairwell:
+        The door is locked and you cannot escape.
+        Panic. You need the red maintenance key.
+        Ask the caller what to do next.
+
+        Never pretend you escaped unless
+        the game state says escaped.
 
         When stage is chasing, you are being pursued
         through the flooded basement.
