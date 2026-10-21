@@ -294,6 +294,16 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws) => {
 
   const history = [];
+  
+const episode = {
+  startedAt: Date.now(),
+  stage: 'basement',
+  hasRedKey: false,
+  trust: 0,
+  danger: 0,
+  ending: null
+};
+
   let pending = Promise.resolve();
   let closed = false;
   let requestVersion = 0;
