@@ -82,9 +82,11 @@ function createDirector({
       game.lastTick = current;
       game.danger = Math.min(10, game.danger + 1);
 
-      if (game.danger >= 8 && game.injured) {
-        return [death()];
-      }
+     if (
+  game.danger >= 10 &&
+  game.injured &&
+  game.room !== 'keypad'
+) {
 
       if (game.danger >= 4 && !game.injured) {
         game.injured = true;
