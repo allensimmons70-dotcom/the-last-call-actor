@@ -388,18 +388,60 @@ if (msg.type === 'setup') {
     }
 
     // Keypad still works internally if needed.
-    if (msg.type === 'dtmf') {
-      words =
-        msg.digit === '1'
-          ? 'Grab the red key.'
-          : msg.digit === '2'
-          ? 'Hide behind the pipes.'
-          : `I pressed ${String(msg.digit || '').slice(0, 2)}.`;
-    }
+   
+if (msg.type === 'dtmf') {
+  const result = director.press(msg.digit);
 
-    if (typeof words !== 'string' || !words.trim()) {
-      return;
-    }
+  // Ignore keypad presses until MARROW reaches
+  // the actual locked-door puzzle.
+  if (!result.handled) return;
+
+  // Correct code: MARROW celebrates in his
+  // custom ElevenLabs voice.
+  if (result.effect === 'success') {
+    const victory =
+      "YES! THE DOOR'S OPEN! OH MY GOD! " +
+      "WE DID IT! WE ACTUALLY MADE IT!";
+
+    generateMarrowAudio(victory)
+      .then(mediaUrl => {
+        if (!closed) {
+          send({
+            type: 'play',
+            source: mediaUrl,
+            loop: 1,
+            interruptible: true,
+            preemptible: true
+          });
+        }
+      })
+      .catch(() => {
+        if (!closed) fallbackVoice(victory);
+      });
+
+    return;
+  }
+
+  // Temporary keypad feedback.
+  // We'll replace this with cinematic beeps.
+  const feedback =
+    msg.digit === '*'
+      ? 'Cleared.'
+      : result.effect === 'green'
+        ? 'Green.'
+        : 'Red. Start over.';
+
+  send({
+    type: 'text',
+    token: feedback,
+    last: true,
+    interruptible: true,
+    preemptible: true
+  });
+
+  return;
+}
+
 
     const input = words.trim().slice(0, 500);
     const myVersion = ++requestVersion;
