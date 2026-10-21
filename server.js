@@ -432,12 +432,40 @@ if (msg.type === 'setup') {
           episode.trust = Math.min(10, episode.trust + 1);
         }
 
+        // CHAPTER 1 — MARROW'S SURVIVAL REFLEX
+        const runCommand =
+          !isNegative &&
+          /\b(run|sprint|hurry|move)\b/.test(command);
+
+        if (runCommand) {
+          episode.stage = 'chasing';
+          episode.danger = Math.min(10, episode.danger + 2);
+        }
+
         const liveInstructions = `${STORY_INSTRUCTIONS}
 
         CURRENT GAME STATE:
         Location/state: ${episode.stage}
         Has red maintenance key: ${episode.hasRedKey}
         Caller trust: ${episode.trust}
+        
+        Danger level: ${episode.danger}
+
+        When stage is chasing, you are being pursued
+        through the flooded basement.
+
+        React immediately and emotionally to the
+        caller's instructions. Speak in short bursts.
+        You are frightened, breathless and frustrated.
+
+        If the caller screams RUN, respond like a
+        terrified human being, not a calm narrator.
+
+        You may argue, panic, or yell back.
+        Do not magically escape or teleport.
+        The chase is not over until a later
+        story event resolves it.
+
 
         Respect the game state.
         Never claim to have the key when hasRedKey is false.
