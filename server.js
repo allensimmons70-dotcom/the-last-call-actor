@@ -310,10 +310,37 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    if (msg.type === 'setup') {
-      console.log('MARROW custom voice session connected');
-      return;
-    }
+    
+if (msg.type === 'setup') {
+  console.log('MARROW custom voice session connected');
+
+  const intro = "Hello? HELLO?! Oh, thank God, somebody answered. Listen, I don't know who you are, but I'm trapped down here. There's something outside this door... and I think it knows I'm here. Can you help me?";
+
+  const introVersion = requestVersion;
+
+  generateMarrowAudio(intro)
+    .then((mediaUrl) => {
+      if (closed || requestVersion !== introVersion) return;
+
+      send({
+        type: 'play',
+        source: mediaUrl,
+        loop: 1,
+        interruptible: true,
+        preemptible: true
+      });
+    })
+    .catch((error) => {
+      console.error('MARROW opening failed:', error.message);
+
+      if (!closed && requestVersion === introVersion) {
+        fallbackVoice(intro);
+      }
+    });
+
+  return;
+}
+
 
     if (msg.type === 'error') {
       console.error(
