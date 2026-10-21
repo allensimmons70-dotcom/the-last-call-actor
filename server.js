@@ -637,10 +637,31 @@ if (msg.type === 'setup') {
         `;
 
 
+const directorEvent = director.act(input);
+
         // MARROW THINKS
         const response = await openai.responses.create({
           model: MODEL,
-          instructions: liveInstructions,
+          
+instructions: `${STORY_INSTRUCTIONS}
+
+${director.context()}
+
+LATEST DIRECTOR EVENT:
+${directorEvent.handled
+  ? directorEvent.text
+  : 'No physical game action was completed.'}
+
+IMPORTANT RULES:
+The Director is the authority on physical reality.
+React naturally and emotionally to its events.
+Do not contradict the Director's current room.
+Do not invent completed actions or discoveries.
+Never reveal hidden clues or puzzle solutions.
+Never invent an escape.
+Keep your own personality, fear, humor and voice.
+`,
+
           input: history.slice(-16),
           max_output_tokens: 140,
           store: false
