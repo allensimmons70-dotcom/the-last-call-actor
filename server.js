@@ -413,11 +413,44 @@ if (msg.type === 'setup') {
       });
 
       try {
+        
+        // CHAPTER 1 — Track the caller's decisions
+        const command = input.toLowerCase();
+
+        const isNegative =
+          /\b(don't|dont|do not|never|shouldn't)\b/.test(command);
+
+        if (!isNegative &&
+            /\b(grab|take|pick up|get)\s+(the\s+)?(red\s+)?key\b/.test(command)) {
+          episode.hasRedKey = true;
+          episode.stage = 'key_collected';
+        }
+
+        if (!isNegative &&
+            /\b(hide|duck|crouch)\s+(behind|under|near)\s+(the\s+)?pipes?\b/.test(command)) {
+          episode.stage = 'hiding';
+          episode.trust = Math.min(10, episode.trust + 1);
+        }
+
+        const liveInstructions = `${STORY_INSTRUCTIONS}
+
+        CURRENT GAME STATE:
+        Location/state: ${episode.stage}
+        Has red maintenance key: ${episode.hasRedKey}
+        Caller trust: ${episode.trust}
+
+        Respect the game state.
+        Never claim to have the key when hasRedKey is false.
+        Once collected, remember the key until a story event
+        explicitly removes it.
+        React emotionally to the caller's choices.
+        `;
+
 
         // MARROW THINKS
         const response = await openai.responses.create({
           model: MODEL,
-          instructions: STORY_INSTRUCTIONS,
+          instructions: liveInstructions,
           input: history.slice(-16),
           max_output_tokens: 140,
           store: false
