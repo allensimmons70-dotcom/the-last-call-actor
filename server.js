@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const WebSocket = require('ws');
 const OpenAI = require('openai');
 const { createDirector } = require('./listener-director');
+const { getListenerSound } = require('./listener-sounds');
 const twilio = require('twilio');
 
 const PORT = Number(process.env.PORT || 10000);
@@ -145,6 +146,34 @@ cleanupTimer.unref();
 
 // RENDER WEB SERVER
 const server = http.createServer((req, res) => {
+  
+  // Serve The Listener's sound effects
+  const match = /^\/sfx\/([a-z]+)\.wav$/.exec(
+    req.url || ''
+  );
+
+  if (
+    match &&
+    (req.method === 'GET' || req.method === 'HEAD')
+  ) {
+    const audio = getListenerSound(match[1]);
+
+    if (!audio) {
+      res.writeHead(404);
+      return res.end('Sound not found');
+    }
+
+    res.writeHead(200, {
+      'content-type': 'audio/wav',
+      'content-length': String(audio.length),
+      'cache-control': 'public, max-age=3600'
+    });
+
+    return req.method === 'HEAD'
+      ? res.end()
+      : res.end(audio);
+  }
+
 
   if (req.url === '/health' && req.method === 'GET') {
     res.writeHead(200, {
