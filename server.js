@@ -668,9 +668,12 @@ const episode = {
   let requestVersion = 0;
 
   
+  
   function send(message) {
     if (!closed && ws.readyState === WebSocket.OPEN) {
 
+      // Protect MARROW's dialogue from random
+      // monster effects while he's speaking.
       if (
         message.type === 'play' &&
         typeof message.source === 'string' &&
@@ -684,8 +687,10 @@ const episode = {
           ? audioFiles.get(hit[1])
           : null;
 
+        // ElevenLabs MP3 is generated at 32 kbps.
+        // Estimate how long MARROW's line will play.
         const durationMs = cached
-          ? cached.audio.length / 4000 * 1000
+          ? cached.audio.length / 4
           : 7000;
 
         voiceUntil = Date.now() + Math.max(
@@ -697,6 +702,7 @@ const episode = {
       ws.send(JSON.stringify(message));
     }
   }
+
 
 
   // Backup voice if ElevenLabs has a problem.
