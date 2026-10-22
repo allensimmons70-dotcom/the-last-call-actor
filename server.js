@@ -5,8 +5,11 @@
 // Ruth stays in Twilio Studio.
 // ElevenLabs generates MARROW's actual speaking voice.
 
+
 const http = require('node:http');
-goodbyeconst crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
 const WebSocket = require('ws');
 const OpenAI = require('openai');
 const { createDirector } = require('./listener-director');
