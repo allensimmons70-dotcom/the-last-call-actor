@@ -429,11 +429,21 @@ const episode = {
       audioTimers.add(timer);
     }
 
+   
     function playListenerSound(name) {
       if (closed) return;
 
+      const realSounds = [
+        'knocks', 'roar', 'chain',
+        'boom_a', 'boom_b'
+      ];
+
+      const extension = realSounds.includes(name)
+        ? 'mp3'
+        : 'wav';
+
       const source =
-        `${PUBLIC_HTTPS_ORIGIN}/sfx/${name}.wav`;
+        `${PUBLIC_HTTPS_ORIGIN}/sfx/${name}.${extension}`;
 
       send({
         type: 'play',
@@ -445,6 +455,7 @@ const episode = {
 
       console.log('[LISTENER AUDIO]', name);
     }
+
 
     async function speakListenerLine(
       line,
@@ -476,106 +487,171 @@ const episode = {
       }
     }
 
+    // THE LISTENER — REAL SOUND DIRECTOR
+
+    const callStartedAt = Date.now();
+
+    const scarePool = [
+      'roar', 'chain', 'boom_a', 'boom_b'
+    ];
+
+    const soundLength = {
+      knocks: 15000,
+      roar: 6000,
+      chain: 8000,
+      boom_a: 4000,
+      boom_b: 4000
+    };
+
+    let entrancePlayed = false;
+    let lastScare = null;
+    let activeSoundUntil = 0;
+    let voiceUntil = 0;
+    let firstHintGiven = false;
+
+    function randomPause() {
+      return 12000 +
+        Math.floor(Math.random() * 13000);
+    }
+
+    function randomScare() {
+      const choices = scarePool.filter(
+        name => name !== lastScare
+      );
+
+      const choice = choices[
+        Math.floor(Math.random() * choices.length)
+      ];
+
+      lastScare = choice;
+      return choice;
+    }
+
     const listenerClock = setInterval(() => {
       if (closed) return;
 
       const now = Date.now();
+      const elapsed = now - callStartedAt;
       const events = director.tick();
 
       for (const outcome of events) {
-        const state = director.snapshot();
 
-        sceneBusyUntil = now + 7000;
-        nextAmbientAt = now + 8500;
-
-        // MARROW DIES
+        // DEATH EVENT
         if (outcome.effect === 'death') {
-          sceneBusyUntil = now + 6500;
+          sceneBusyUntil = now + 14000;
 
-          playListenerSound('attack');
+          playListenerSound('boom_a');
+          activeSoundUntil = now + soundLength.boom_a;
 
-          scheduleAudio(1700, () => {
+          scheduleAudio(4200, () => {
             speakListenerLine(
-              'NO! GET IT OFF ME! HELP!',
+              'NO! NO, GET OFF ME! HELP!',
               true
             );
           });
 
-          scheduleAudio(4400, () => {
-            playListenerSound('death');
-          });
-
           continue;
         }
 
-        // THE LISTENER INJURES MARROW
+        // INJURY EVENT
         if (outcome.effect === 'attack') {
-          playListenerSound('attack');
+          sceneBusyUntil = now + 13000;
 
-          scheduleAudio(1900, () => {
+          playListenerSound('boom_b');
+          activeSoundUntil = now + soundLength.boom_b;
+
+          scheduleAudio(4200, () => {
             speakListenerLine(
-              'AHH! MY LEG! It hit me! ' +
-              'I can barely stand!'
+              'AAH! MY LEG! IT GOT MY LEG! ' +
+              'I CAN BARELY MOVE!'
             );
           });
 
           continue;
         }
 
-        // MONSTER APPROACHING
-        if (outcome.effect === 'knocks') {
-          const effect =
-            state.danger >= 6
-              ? 'footsteps'
-              : state.danger >= 3
-                ? 'scrape'
-                : 'knocks';
-
-          playListenerSound(effect);
-
-          if (state.danger === 2) {
-            scheduleAudio(2250, () => {
-              speakListenerLine(
-                'Shhh... did you hear that? ' +
-                'Three knocks. It is moving.'
-              );
-            });
-          }
-        }
+        // The old periodic knock effects are ignored.
+        // Our new entrance and random sound pool
+        // manage The Listener's presence.
       }
 
-      // No more ambience after Chapter 1 ends.
       if (director.snapshot().ending) return;
 
-      // Avoid playing ambience over major scenes.
+      // MARROW HELPS MOVE THE STORY FORWARD
+      // instead of waiting silently forever.
+      if (
+        !firstHintGiven &&
+        elapsed >= 25000 &&
+        elapsed < 60000 &&
+        now - lastCallerActivity >= 12000 &&
+        now >= voiceUntil
+      ) {
+        firstHintGiven = true;
+
+        speakListenerLine(
+          'Hey! I can see a loose grate ' +
+          'and some rusty pipes. ' +
+          'Where do you want me to look first?'
+        );
+
+        return;
+      }
+
+      // GRAND ENTRANCE — PLAYS ONCE
+      if (!entrancePlayed) {
+        if (
+          elapsed >= 65000 &&
+          now >= sceneBusyUntil &&
+          now >= voiceUntil &&
+          now - lastCallerActivity >= 3000
+        ) {
+          entrancePlayed = true;
+
+          playListenerSound('knocks');
+
+          activeSoundUntil =
+            now + soundLength.knocks;
+
+          sceneBusyUntil = now + 21000;
+
+          nextAmbientAt =
+            now + soundLength.knocks + randomPause();
+
+          scheduleAudio(15500, () => {
+            speakListenerLine(
+              'Oh, shit... did you hear that?! ' +
+              'Three knocks. Whatever that is, ' +
+              'it knows I am here.'
+            );
+          });
+        }
+
+        return;
+      }
+
+      // RANDOM SCARES AFTER THE GRAND ENTRANCE
+      // Avoid interrupting important voice moments.
       if (
         now < sceneBusyUntil ||
-        now < nextAmbientAt
+        now < activeSoundUntil ||
+        now < voiceUntil ||
+        now < nextAmbientAt ||
+        now - lastCallerActivity < 9000
       ) return;
 
-      // Give the caller time to speak naturally.
-      if (
-        now - lastCallerActivity < 8500
-      ) return;
+      const name = randomScare();
 
-      const state = director.snapshot();
+      playListenerSound(name);
 
-      const effect =
-        state.room === 'keypad' ||
-        state.danger >= 7
-          ? 'footsteps'
-          : 'drone';
+      activeSoundUntil =
+        now + soundLength[name];
 
-      playListenerSound(effect);
-
-      nextAmbientAt = now + (
-        effect === 'drone'
-          ? 12500
-          : 7500
-      );
+      nextAmbientAt =
+        activeSoundUntil + randomPause();
 
     }, 1000);
 
+   
     // Clean up when the caller hangs up.
     ws.once('close', () => {
       clearInterval(listenerClock);
@@ -591,11 +667,37 @@ const episode = {
 
   let requestVersion = 0;
 
+  
   function send(message) {
     if (!closed && ws.readyState === WebSocket.OPEN) {
+
+      if (
+        message.type === 'play' &&
+        typeof message.source === 'string' &&
+        message.source.includes('/audio/')
+      ) {
+        const hit =
+          /\/audio\/([a-f0-9-]{36})\.mp3$/
+            .exec(message.source);
+
+        const cached = hit
+          ? audioFiles.get(hit[1])
+          : null;
+
+        const durationMs = cached
+          ? cached.audio.length / 4000 * 1000
+          : 7000;
+
+        voiceUntil = Date.now() + Math.max(
+          3500,
+          Math.min(18000, durationMs + 600)
+        );
+      }
+
       ws.send(JSON.stringify(message));
     }
   }
+
 
   // Backup voice if ElevenLabs has a problem.
   function fallbackVoice(text) {
@@ -976,10 +1078,7 @@ if (msg.type === 'dtmf') {
         `;
 
 
-const directorEvent = director.act(input);
-        if (directorEvent.effect === 'knocks') {
-  playListenerSound('knocks');
-}
+
 
         // MARROW THINKS
         const response = await openai.responses.create({
