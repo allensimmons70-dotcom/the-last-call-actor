@@ -628,19 +628,33 @@ if (msg.type === 'dtmf') {
 
   if (!result.handled) return;
 
+ 
   if (result.effect === 'success') {
+    console.log(
+      '[CHAPTER 1 VICTORY]',
+      director.snapshot().room
+    );
+
     playListenerSound('success');
 
     scheduleAudio(1500, () => {
       speakListenerLine(
-        "YES! THE DOOR'S OPEN! " +
-        "OH MY GOD! WE ACTUALLY MADE IT!",
+        "YES! THE DOOR! IT'S OPEN! " +
+        "I'm outside! I'm actually outside! " +
+        "Listen, I need to tell you something. " +
+        "I found a black card with this number. " +
+        "I called it. There was a woman trapped. " +
+        "I helped her escape. " +
+        "Then the line went dead, " +
+        "and I woke up in that basement. " +
+        "Wait... why do I hear knocking out here?",
         true
       );
     });
 
     return;
   }
+
 
   if (result.effect === 'green') {
     playListenerSound('green');
