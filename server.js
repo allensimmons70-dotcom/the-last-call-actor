@@ -6,7 +6,7 @@
 // ElevenLabs generates MARROW's actual speaking voice.
 
 const http = require('node:http');
-const crypto = require('node:crypto');
+goodbyeconst crypto = require('node:crypto');
 const WebSocket = require('ws');
 const OpenAI = require('openai');
 const { createDirector } = require('./listener-director');
@@ -148,6 +148,54 @@ cleanupTimer.unref();
 const server = http.createServer((req, res) => {
   
  
+  // THE LISTENER — Real MP3 sound library
+
+  const realSounds = {
+    knocks: 'Grand entrance — Three knocks.mp3',
+    roar: 'The roar.mp3',
+    chain: 'Dragging chains.mp3',
+    boom_a: 'Boom A.mp3',
+    boom_b: 'Boom B.mp3'
+  };
+
+  const realSoundMatch =
+    /^\/sfx\/(knocks|roar|chain|boom_a|boom_b)\.mp3$/
+      .exec((req.url || '').split('?')[0]);
+
+  if (realSoundMatch) {
+    const name = realSoundMatch[1];
+
+    try {
+      const filePath = path.join(
+        __dirname,
+        realSounds[name]
+      );
+
+      const audio = fs.readFileSync(filePath);
+
+      res.writeHead(200, {
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audio.length,
+        'Cache-Control': 'no-store'
+      });
+
+      console.log('[REAL LISTENER SOUND]', name);
+
+      return req.method === 'HEAD'
+        ? res.end()
+        : res.end(audio);
+
+    } catch (error) {
+      console.error(
+        '[SOUND NOT FOUND]',
+        name,
+        error.message
+      );
+
+      res.writeHead(404);
+      return res.end('Sound file missing');
+    }
+  }
   // THE LISTENER — Public sound effects
   // Must run BEFORE the normal 404 handler.
 
