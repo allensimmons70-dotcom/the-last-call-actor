@@ -1085,6 +1085,9 @@ if (msg.type === 'dtmf') {
 
 
 
+        // Ask the Director to process the caller's move.
+        const directorEvent = director.act(input);
+
 
         // MARROW THINKS
         const response = await openai.responses.create({
