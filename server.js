@@ -386,7 +386,12 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws) => {
 
   const history = [];
-  const director = createDirector();
+
+const director = createDirector({
+  maxDurationMs: 270000,
+  keypadDurationMs: 90000
+});
+
   
 const episode = {
   startedAt: Date.now(),
@@ -530,16 +535,44 @@ const episode = {
     const listenerClock = setInterval(() => {
       if (closed) return;
 
+     
       const now = Date.now();
       const elapsed = now - callStartedAt;
+
+      // CHAPTER 1 HARD STOP — Five minutes
+      if (elapsed >= 300000) {
+        console.log('[CHAPTER 1] Five-minute limit reached');
+
+        clearInterval(listenerClock);
+
+        for (const timer of audioTimers) {
+          clearTimeout(timer);
+        }
+        audioTimers.clear();
+
+        send({
+          type: 'end',
+          handoffData: JSON.stringify({
+            chapter: 1,
+            outcome: director.snapshot().ending || 'expired'
+          })
+        });
+
+        return;
+      }
+
       const events = director.tick();
+
 
       for (const outcome of events) {
 
         // DEATH EVENT
         if (outcome.effect === 'death') {
           sceneBusyUntil = now + 14000;
-
+console.log(
+  '[MARROW DEATH — ELAPSED SECONDS]',
+  Math.round((Date.now() - callStartedAt) / 1000)
+);
           playListenerSound('boom_a');
           activeSoundUntil = now + soundLength.boom_a;
 
@@ -767,6 +800,16 @@ if (msg.type === 'setup') {
     }
 
     if (msg.type === 'interrupt') {
+      return;
+    }
+
+    // Once MARROW dies or escapes,
+    // no new conversation can continue.
+    if (director.snapshot().ending) {
+      console.log(
+        '[CHAPTER COMPLETE — INPUT IGNORED]',
+        director.snapshot().ending
+      );
       return;
     }
 
@@ -1126,18 +1169,30 @@ Keep your own personality, fear, humor and voice.
           content: reply
         });
 
-        if (closed || myVersion !== requestVersion) {
-          return;
-        }
+       
+if (
+  closed ||
+  myVersion !== requestVersion ||
+  director.snapshot().ending
+) {
+  return;
+}
+
 
         try {
 
           // MARROW SPEAKS WITH YOUR ELEVENLABS VOICE
           const mediaUrl = await generateMarrowAudio(reply);
 
-          if (closed || myVersion !== requestVersion) {
-            return;
-          }
+         
+if (
+  closed ||
+  myVersion !== requestVersion ||
+  director.snapshot().ending
+) {
+  return;
+}
+
 
           send({
             type: 'play',
