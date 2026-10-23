@@ -405,6 +405,29 @@ const episode = {
   let pending = Promise.resolve();
   let closed = false;
   
+  let handoffSent = false;
+
+  function finishChapter(outcome) {
+    if (closed || handoffSent) return;
+
+    handoffSent = true;
+    requestVersion++;
+
+    clearInterval(listenerClock);
+
+    for (const timer of audioTimers) {
+      clearTimeout(timer);
+    }
+    audioTimers.clear();
+
+    console.log('[CHAPTER 1 HANDOFF]', outcome);
+
+    send({
+      type: 'end',
+      handoffData: outcome
+    });
+  }
+
     
     // THE LISTENER — CINEMATIC AUDIO DIRECTOR
 
@@ -540,14 +563,14 @@ const episode = {
       const elapsed = now - callStartedAt;
 
       // CHAPTER 1 HARD STOP — Five minutes
+      
       if (elapsed >= 300000) {
-        console.log('[CHAPTER 1] Five-minute limit reached');
+        finishChapter(
+          director.snapshot().ending || 'expired'
+        );
+        return;
+      }
 
-        clearInterval(listenerClock);
-
-        for (const timer of audioTimers) {
-          clearTimeout(timer);
-        }
         audioTimers.clear();
 
         send({
@@ -581,6 +604,12 @@ console.log(
               'NO! NO, GET OFF ME! HELP!',
               true
             );
+          });
+
+          // Let MARROW's final cry play,
+          // then return the caller to Ruth.
+          scheduleAudio(13500, () => {
+            finishChapter('dead');
           });
 
           continue;
@@ -831,7 +860,11 @@ if (msg.type === 'dtmf') {
   if (!result.handled) return;
 
  
+ 
+
   if (result.effect === 'success') {
+    requestVersion++;
+
     console.log(
       '[CHAPTER 1 VICTORY]',
       director.snapshot().room
@@ -839,19 +872,24 @@ if (msg.type === 'dtmf') {
 
     playListenerSound('success');
 
-    scheduleAudio(1500, () => {
-      speakListenerLine(
-        "YES! THE DOOR! IT'S OPEN! " +
-        "I'm outside! I'm actually outside! " +
-        "Listen, I need to tell you something. " +
-        "I found a black card with this number. " +
-        "I called it. There was a woman trapped. " +
-        "I helped her escape. " +
-        "Then the line went dead, " +
-        "and I woke up in that basement. " +
-        "Wait... why do I hear knocking out here?",
+    scheduleAudio(1500, async () => {
+      await speakListenerLine(
+        "WE DID IT! I'M OUTSIDE! OH MY GOD! " +
+        "Listen, before that basement, I found a black card. " +
+        "I called its number and helped a woman escape. " +
+        "Then the line went dead. I woke up trapped down there. " +
+        "Wait... why am I hearing those knocks out here?",
         true
       );
+
+      const remainingMs = Math.max(
+        1000,
+        voiceUntil - Date.now() + 1200
+      );
+
+      scheduleAudio(remainingMs, () => {
+        finishChapter('survived');
+      });
     });
 
     return;
@@ -1211,6 +1249,7 @@ if (
 
           if (!closed && myVersion === requestVersion) {
             fallbackVoice(reply);
+            && !director.snapshot().ending && !handoffSent
           }
         }
 
@@ -1223,6 +1262,7 @@ if (
 
         if (!closed && myVersion === requestVersion) {
           fallbackVoice(
+            && !director.snapshot().ending && !handoffSent
             "The line's cutting out. I need you to say that again."
           );
         }
