@@ -526,8 +526,7 @@ const director = createDirector({
     let lastScare = null;
     let activeSoundUntil = 0;
     let voiceUntil = 0;
-    let firstHintGiven = false;
-
+   let lastScenePromptAt = 0;
     function randomPause() {
       return 12000 +
         Math.floor(Math.random() * 13000);
@@ -619,25 +618,53 @@ console.log(
 
       if (director.snapshot().ending) return;
 
-      // MARROW HELPS MOVE THE STORY FORWARD
-      // instead of waiting silently forever.
+      
+      // CHAPTER 1 — MARROW TAKES INITIATIVE
+      // Physical actions still belong to the Director.
+
+      const scene = director.snapshot();
+
       if (
-        !firstHintGiven &&
-        elapsed >= 25000 &&
-        elapsed < 60000 &&
-        now - lastCallerActivity >= 12000 &&
-        now >= voiceUntil
+        elapsed >= 20000 &&
+        elapsed < 265000 &&
+        (elapsed < 65000 || entrancePlayed) &&
+        now - lastCallerActivity >= 11000 &&
+        now - lastScenePromptAt >= 24000 &&
+        now >= activeSoundUntil &&
+        now >= sceneBusyUntil &&
+        now >= voiceUntil &&
+        !handoffSent
       ) {
-        firstHintGiven = true;
+        let line = null;
 
-        speakListenerLine(
-          'Hey! I can see a loose grate ' +
-          'and some rusty pipes. ' +
-          'Where do you want me to look first?'
-        );
+        if (scene.room === 'basement') {
+          line = !scene.keyFound
+            ? "There's a loose grate and a soaked note here. Which one should I examine?"
+            : !scene.hasKey
+              ? "I can see a red key under the grate. Should I grab it?"
+              : "I've got the red key in my hand. There's a corridor ahead. Should I move?";
 
-        return;
+        } else if (scene.room === 'corridor') {
+          line =
+            "I'm in the corridor. Four red switches, and the stairwell ahead. What do you want me to check?";
+
+        } else if (scene.room === 'stairwell') {
+          line = scene.hasKey
+            ? "I'm at the steel exit. The key's still in my hand, and there's a red panel beside the door. Use it?"
+            : "The exit panel needs a key. I left that loose grate behind in the basement. What now?";
+
+        } else if (scene.room === 'keypad') {
+          line =
+            "Four lights on the keypad! Use your REAL phone keypad! Remember the clues! Hurry!";
+        }
+
+        if (line) {
+          lastScenePromptAt = now;
+          speakListenerLine(line);
+          return;
+        }
       }
+
 
       // GRAND ENTRANCE — PLAYS ONCE
       if (!entrancePlayed) {
