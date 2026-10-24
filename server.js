@@ -707,6 +707,44 @@ console.log(
         }
       }
 
+      // DIRECTOR BEAT 3 — THE CORRIDOR
+      // MARROW moves when the caller hesitates.
+
+      const corridorState = director.snapshot();
+
+      if (
+        elapsed >= 102000 &&
+        corridorState.room === 'basement' &&
+        corridorState.hasKey &&
+        now >= sceneBusyUntil &&
+        now >= activeSoundUntil &&
+        now >= voiceUntil &&
+        now - lastCallerActivity >= 2000
+      ) {
+        const move = director.act('go to the corridor');
+
+        if (
+          move.handled &&
+          director.snapshot().room === 'corridor'
+        ) {
+          lastScenePromptAt = now;
+          sceneBusyUntil = now + 7500;
+
+          console.log(
+            '[DIRECTOR BEAT 3] ENTERED CORRIDOR'
+          );
+
+          speakListenerLine(
+            "I'm moving! I'm out of that room! " +
+            "There's a row of red switches on the wall " +
+            "and a stairwell ahead. " +
+            "What do I check?!"
+          );
+
+          return;
+        }
+      }
+
       
       // CHAPTER 1 — MARROW TAKES INITIATIVE
       // Physical actions still belong to the Director.
