@@ -596,22 +596,49 @@ console.log(
           continue;
         }
 
-        // INJURY EVENT
+        
+        // THE LISTENER — SCRIPTED ATTACK
         if (outcome.effect === 'attack') {
-          sceneBusyUntil = now + 13000;
 
-          playListenerSound('boom_b');
-          activeSoundUntil = now + soundLength.boom_b;
+          console.log('[DIRECTOR] LISTENER ATTACK');
 
-          scheduleAudio(4200, () => {
+          // Reserve this scene for cinematic audio.
+          sceneBusyUntil = now + 21000;
+
+          // 1. THE LISTENER ROARS
+          playListenerSound('roar');
+          activeSoundUntil = now + soundLength.roar;
+
+          // 2. THE LISTENER STRIKES MARROW
+          scheduleAudio(6200, () => {
+            if (director.snapshot().ending) return;
+
+            playListenerSound('boom_b');
+
+            activeSoundUntil =
+              Date.now() + soundLength.boom_b;
+          });
+
+          // 3. MARROW REACTS TO THE INJURY
+          scheduleAudio(10500, () => {
+            if (director.snapshot().ending) return;
+
             speakListenerLine(
-              'AAH! MY LEG! IT GOT MY LEG! ' +
-              'I CAN BARELY MOVE!'
+              "AAAHHH! FUCK! MY LEG! " +
+              "IT GOT MY LEG! " +
+              "I CAN BARELY STAND! " +
+              "WE HAVE TO GET OUT OF HERE!"
             );
           });
 
+          // Don't launch another random scare
+          // immediately after the attack.
+          nextAmbientAt =
+            now + 21000 + randomPause();
+
           continue;
         }
+
 
         // The old periodic knock effects are ignored.
         // Our new entrance and random sound pool
