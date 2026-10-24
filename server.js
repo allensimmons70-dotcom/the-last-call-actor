@@ -527,6 +527,7 @@ const director = createDirector({
     let activeSoundUntil = 0;
     let voiceUntil = 0;
    let lastScenePromptAt = 0;
+    let openingClueBeatPlayed = false;
     function randomPause() {
       return 12000 +
         Math.floor(Math.random() * 13000);
@@ -617,6 +618,47 @@ console.log(
       }
 
       if (director.snapshot().ending) return;
+      
+      
+      // DIRECTOR BEAT 1 — THE SOAKED NOTE
+      // MARROW actively begins the investigation.
+
+      const beatState = director.snapshot();
+
+      if (
+        !openingClueBeatPlayed &&
+        elapsed >= 20000 &&
+        beatState.room === 'basement' &&
+        !beatState.clues.includes('order') &&
+        now >= sceneBusyUntil &&
+        now >= activeSoundUntil &&
+        now >= voiceUntil &&
+        now - lastCallerActivity >= 2500
+      ) {
+        const noteEvent =
+          director.act('read the soaked note');
+
+        if (noteEvent.handled) {
+          openingClueBeatPlayed = true;
+          lastScenePromptAt = now;
+          sceneBusyUntil = now + 8000;
+
+          console.log(
+            '[DIRECTOR] First clue discovered'
+          );
+
+          speakListenerLine(
+            "WAIT! There's a note stuck to " +
+            "these rusty pipes! " +
+            "Pipes. Clock. Switches. Door. " +
+            "What the hell does that mean?! " +
+            "Help me figure this out!"
+          );
+
+          return;
+        }
+      }
+
 
       
       // CHAPTER 1 — MARROW TAKES INITIATIVE
