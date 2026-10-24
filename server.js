@@ -528,6 +528,7 @@ const director = createDirector({
     let voiceUntil = 0;
    let lastScenePromptAt = 0;
     let openingClueBeatPlayed = false;
+  let keyBeatPlayed = false;
     function randomPause() {
       return 12000 +
         Math.floor(Math.random() * 13000);
@@ -659,6 +660,52 @@ console.log(
         }
       }
 
+
+      // DIRECTOR BEAT 2 — THE RED KEY
+      // Keep the adventure moving.
+
+      const keyState = director.snapshot();
+
+      if (
+        !keyBeatPlayed &&
+        elapsed >= 90000 &&
+        keyState.room === 'basement' &&
+        !keyState.hasKey &&
+        now >= sceneBusyUntil &&
+        now >= activeSoundUntil &&
+        now >= voiceUntil &&
+        now - lastCallerActivity >= 2500
+      ) {
+        // Discover the key if not already found.
+        if (!keyState.keyFound) {
+          director.act('look under the grate');
+        }
+
+        // Physically collect the key.
+        director.act('grab the red key');
+
+        const updated = director.snapshot();
+
+        if (updated.hasKey) {
+          keyBeatPlayed = true;
+          lastScenePromptAt = now;
+          sceneBusyUntil = now + 9000;
+
+          console.log(
+            '[DIRECTOR BEAT 2] RED KEY COLLECTED'
+          );
+
+          speakListenerLine(
+            "WAIT! There's something under " +
+            "this grate! A RED KEY! " +
+            "I GOT IT! I GOT THE DAMN KEY! " +
+            "There's a corridor ahead. " +
+            "We gotta move! Which way?!"
+          );
+
+          return;
+        }
+      }
 
       
       // CHAPTER 1 — MARROW TAKES INITIATIVE
