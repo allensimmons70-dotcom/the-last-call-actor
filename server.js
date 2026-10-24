@@ -449,7 +449,7 @@ const director = createDirector({
     }
 
    
-    function playListenerSound(name) {
+  function playListenerSound(name, protect = false) {
       if (closed) return;
 
       const realSounds = [
@@ -468,18 +468,19 @@ const director = createDirector({
         type: 'play',
         source,
         loop: 1,
-        interruptible: true,
-        preemptible: true
+        interruptible: !protect,
+preemptible: !protect
       });
 
       console.log('[LISTENER AUDIO]', name);
     }
 
-
     async function speakListenerLine(
-      line,
-      allowEnding = false
-    ) {
+  line,
+  allowEnding = false,
+  lockScene = false
+)
+     {
       try {
         const source = await generateMarrowAudio(line);
 
@@ -606,7 +607,7 @@ console.log(
           sceneBusyUntil = now + 21000;
 
           // 1. THE LISTENER ROARS
-          playListenerSound('roar');
+         playListenerSound('roar', true);
           activeSoundUntil = now + soundLength.roar;
 
           // 2. THE LISTENER STRIKES MARROW
@@ -680,8 +681,10 @@ console.log(
             "these rusty pipes! " +
             "Pipes. Clock. Switches. Door. " +
             "What the hell does that mean?! " +
-            "Help me figure this out!"
-          );
+           "Help me figure this out!",
+false,
+true
+);
 
           return;
         }
@@ -825,12 +828,12 @@ console.log(
         if (
           elapsed >= 65000 &&
           now >= sceneBusyUntil &&
-          now >= voiceUntil &&
-          now - lastCallerActivity >= 3000
+         now >= voiceUntil &&
+now >= activeSoundUntil
         ) {
           entrancePlayed = true;
 
-          playListenerSound('knocks');
+         playListenerSound('knocks', true);
 
           activeSoundUntil =
             now + soundLength.knocks;
@@ -965,8 +968,8 @@ if (msg.type === 'setup') {
         type: 'play',
         source: mediaUrl,
         loop: 1,
-        interruptible: true,
-        preemptible: true
+        interruptible: !lockScene,
+preemptible: !lockScene
       });
     })
     .catch((error) => {
