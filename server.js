@@ -571,18 +571,7 @@ const episode = {
         return;
       }
 
-        audioTimers.clear();
-
-        send({
-          type: 'end',
-          handoffData: JSON.stringify({
-            chapter: 1,
-            outcome: director.snapshot().ending || 'expired'
-          })
-        });
-
-        return;
-      }
+       
 
       const events = director.tick();
 
@@ -1247,10 +1236,16 @@ if (
             ttsError.message
           );
 
-          if (!closed && myVersion === requestVersion) {
+         
+          if (
+            !closed &&
+            myVersion === requestVersion &&
+            !director.snapshot().ending &&
+            !handoffSent
+          ) {
             fallbackVoice(reply);
-            && !director.snapshot().ending && !handoffSent
           }
+
         }
 
       } catch (error) {
@@ -1260,12 +1255,18 @@ if (
           error.status || error.code || 'error'
         );
 
-        if (!closed && myVersion === requestVersion) {
+       
+        if (
+          !closed &&
+          myVersion === requestVersion &&
+          !director.snapshot().ending &&
+          !handoffSent
+        ) {
           fallbackVoice(
-            && !director.snapshot().ending && !handoffSent
             "The line's cutting out. I need you to say that again."
           );
         }
+
       }
     });
   });
