@@ -453,7 +453,7 @@ const director = createDirector({
     nickname: null,
     optedIn: false,
     previous: null,
-    dbReady: false
+    dbReady: false,
     resumeConfirmed: false,
   };
 
