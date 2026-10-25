@@ -159,13 +159,53 @@ async function main() {
       '[SETUP SMOKE] RETURNING PLAYER RECOGNIZED'
     );
 
+    // TEST: Marcus tells Marrow to forget him.
+    console.log('[SETUP SMOKE] FORGET TEST STARTING');
+
+    assert.ok(
+      await store.load(phone),
+      'Test player should exist before deletion'
+    );
+
+    client.send(JSON.stringify({
+      type: 'prompt',
+      voicePrompt: 'forget me',
+      last: true
+    }));
+
+    // Wait for the actual speech handler to delete memory.
+    let forgotten = false;
+
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const record = await store.load(phone);
+
+      if (record === null) {
+        forgotten = true;
+        break;
+      }
+
+      await pause(250);
+    }
+
+    assert.equal(
+      forgotten,
+      true,
+      'Spoken forget command did not delete the record'
+    );
+
+    console.log(
+      '[SETUP SMOKE] SPOKEN FORGET COMMAND PASSED'
+    );
+
   } finally {
     if (client) client.terminate();
     await pause(300);
 
+    // Safety cleanup if the test failed midway.
     if (seeded) {
       await store.forget(phone);
       assert.equal(await store.load(phone), null);
+
       console.log(
         '[SETUP SMOKE] TEST PLAYER DELETED'
       );
@@ -175,6 +215,7 @@ async function main() {
   }
 }
 
+    
 main()
   .then(() => process.exit(0))
   .catch(error => {
