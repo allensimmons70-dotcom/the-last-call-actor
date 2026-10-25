@@ -1,0 +1,73 @@
+
+name: The Last Call - Memory Check
+
+on:
+  push:
+    branches:
+      - player-memory-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  memory-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get project code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts --no-package-lock
+          fi
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check player-memory.js
+          node --check listener-director.js
+
+      - name: Test memory rules
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const memory = require('./player-memory');
+          const { createDirector } = require('./listener-director');
+
+          assert.equal(
+            memory.memoryCommand('Remember me'),
+            'remember'
+          );
+
+          assert.equal(
+            memory.memoryCommand('Forget me'),
+            'forget'
+          );
+
+          assert.equal(
+            memory.memoryCommand("Don't remember me"),
+            'forget'
+          );
+
+          assert.equal(
+            memory.extractNickname('Call me Marcus'),
+            'Marcus'
+          );
+
+          const director = createDirector();
+
+          assert.equal(director.snapshot().outcome, null);
+          assert.equal(director.snapshot().location, 'pump_room');
+
+          console.log('Memory preflight passed!');
+          NODE
