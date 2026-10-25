@@ -13,6 +13,7 @@ test('player memory saves, reloads, and forgets progress', async () => {
     databaseUrl: process.env.TEST_DATABASE_URL,
     hashSecret: 'CI-TEST-ONLY-DO-NOT-USE-IN-PRODUCTION-1234567890',
     ssl: false
+    schema: 'last_call_ci'
   });
 
   await store.init();
