@@ -454,6 +454,7 @@ const director = createDirector({
     optedIn: false,
     previous: null,
     dbReady: false
+    resumeConfirmed: false,
   };
 
   let setupTask = Promise.resolve();
@@ -1341,6 +1342,59 @@ if (msg.type === 'dtmf') {
 
       // THE LAST CALL — MEMORY VOICE COMMANDS
 
+      // RETURNING PLAYER — CONFIRM BEFORE RECALL
+      if (player.previous && !player.resumeConfirmed) {
+        const answer = input.trim()
+          .toLowerCase()
+          .replace(/[.!?]+$/, '');
+
+        if (memoryCommand(input) === 'forget') {
+          player.optedIn = false;
+          player.previous = null;
+          player.nickname = null;
+
+          try {
+            await queueMemoryWrite(() =>
+              memoryStore.forget(player.phone)
+            );
+            await sayMemoryLine(
+              "Okay. Your saved story is erased."
+            );
+          } catch (error) {
+            console.error('[MEMORY DELETE]', error.message);
+            await sayMemoryLine(
+              "I couldn't confirm the deletion."
+            );
+          }
+          return;
+        }
+
+        if (/^(continue|resume|yes|yeah|yep|it's me|it is me)$/.test(answer)) {
+          player.resumeConfirmed = true;
+          await sayMemoryLine(
+            "Okay... let's pick up where we left off."
+          );
+          return;
+        }
+
+        if (/^(new game|start over|no|nope)$/.test(answer)) {
+          player.previous = null;
+          player.nickname = null;
+          player.optedIn = false;
+
+          await sayMemoryLine(
+            "All right. Fresh start. Help me get out of here!"
+          );
+          return;
+        }
+
+        await sayMemoryLine(
+          "Before we continue, do you want to resume " +
+          "your saved story? Say continue or new game."
+        );
+        return;
+      }
+
       const statedName = extractNickname(input);
 
       if (statedName) {
@@ -1487,7 +1541,7 @@ ${director.context()}
 
 RETURNING PLAYER MEMORY — PREVIOUS CALL ONLY:
 
-${player.optedIn && player.previous
+player.optedIn && player.previous && player.resumeConfirmed
   ? `This caller previously asked to save progress.
 
 Saved nickname: ${player.nickname || 'not supplied'}.
