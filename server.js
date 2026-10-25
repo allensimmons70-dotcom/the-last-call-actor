@@ -1443,6 +1443,39 @@ if (msg.type === 'dtmf') {
         // Ask the Director to process the caller's move.
         const directorEvent = director.act(input);
 
+// SPOKEN KEYPAD VICTORY
+// Same ending as a successful phone keypad entry.
+
+if (directorEvent.effect === 'success') {
+  requestVersion++;
+
+  playListenerSound('success');
+
+  scheduleAudio(1500, async () => {
+    await speakListenerLine(
+      "WE DID IT! I'M OUTSIDE! OH MY GOD! " +
+      "Listen, before that basement, " +
+      "I found a black card. " +
+      "I called its number and helped a woman escape. " +
+      "Then the line went dead. " +
+      "I woke up trapped down there. " +
+      "Wait... why am I hearing those knocks out here?",
+      true
+    );
+
+    const remainingMs = Math.max(
+      1000,
+      voiceUntil - Date.now() + 1200
+    );
+
+    scheduleAudio(remainingMs, () => {
+      finishChapter('survived');
+    });
+  });
+
+  return;
+}
+
 
         // MARROW THINKS
         const response = await openai.responses.create({
@@ -1451,6 +1484,40 @@ if (msg.type === 'dtmf') {
 instructions: `${STORY_INSTRUCTIONS}
 
 ${director.context()}
+
+RETURNING PLAYER MEMORY — PREVIOUS CALL ONLY:
+
+${player.optedIn && player.previous
+  ? `This caller previously asked to save progress.
+
+Saved nickname: ${player.nickname || 'not supplied'}.
+
+Previous chapter outcome:
+${player.previous.lastOutcome || 'unfinished'}.
+
+Previous in-story decisions:
+${Array.isArray(player.previous.lastSnapshot?.recentMoves)
+  ? player.previous.lastSnapshot.recentMoves
+      .slice(-3).join('; ')
+  : 'none stored'}.`
+  : 'No saved history. Never invent previous calls.'}
+
+MEMORY RULES:
+You may naturally reference previous story events,
+especially if the caller brings them up.
+
+Be emotional, not robotic.
+Do not read the saved information like a report.
+
+Previous inventory and completed puzzles do not
+carry into the new attempt.
+
+A phone number does not prove someone's identity.
+Before revealing saved details, confirm the caller
+wants to continue the previous story.
+
+Never claim to recognize the caller's voice.
+
 
 LATEST DIRECTOR EVENT:
 ${directorEvent.handled
