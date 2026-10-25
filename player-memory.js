@@ -80,12 +80,15 @@ function storySnapshot(snapshot) {
   };
 }
 
+
 function createPlayerMemoryStore({
   databaseUrl,
   hashSecret,
   enabled,
-  ssl = false
+  ssl = false,
+  schema = 'public'
 } = {}) {
+
 
   if (!enabled) return null;
 
@@ -94,6 +97,11 @@ function createPlayerMemoryStore({
     throw new Error(
       'Memory enabled but database or hash secret is missing'
     );
+  }
+
+  // Allow only safe PostgreSQL schema names.
+  if (!/^[a-z][a-z0-9_]{0,62}$/.test(schema)) {
+    throw new Error('Invalid player memory schema');
   }
 
   let pool;
@@ -129,6 +137,7 @@ function createPlayerMemoryStore({
 
     pool = new Pool({
       connectionString: databaseUrl,
+      options: `-c search_path=${schema}`,
       max: 3,
       connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 10000,
@@ -136,6 +145,26 @@ function createPlayerMemoryStore({
         ssl: { rejectUnauthorized: true }
       } : {})
     });
+
+    // Create an isolated schema for staging.
+    if (schema !== 'public') {
+      await pool.query(
+        `CREATE SCHEMA IF NOT EXISTS "${schema}"`
+      );
+    }
+
+    // Never write to the wrong schema.
+    const schemaCheck = await pool.query(
+      'SELECT current_schema() AS name'
+    );
+
+    if (schemaCheck.rows[0]?.name !== schema) {
+      throw new Error(
+        'Player memory schema mismatch: refusing to use shared tables'
+      );
+    }
+
+    console.log('[PLAYER MEMORY] Active schema:', schema);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS last_call_players (
