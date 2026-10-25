@@ -67,7 +67,7 @@ jobs:
           const director = createDirector();
 
           assert.equal(director.snapshot().outcome, null);
-          assert.equal(director.snapshot().location, 'pump_room');
+          assert.equal(director.snapshot().location, 'basement');
 
           console.log('Memory preflight passed!');
           NODE
