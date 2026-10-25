@@ -16,6 +16,14 @@ const { createDirector } = require('./listener-director');
 const { getListenerSound } = require('./listener-sounds');
 const twilio = require('twilio');
 
+const {
+  createPlayerMemoryStore,
+  normalizePhone,
+  extractNickname,
+  memoryCommand
+} = require('./player-memory');
+
+
 const PORT = Number(process.env.PORT || 10000);
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
@@ -53,6 +61,43 @@ const PUBLIC_HTTPS_ORIGIN = PUBLIC_WSS_URL
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY
 });
+
+//
+// THE LAST CALL — PLAYER MEMORY SYSTEM
+//
+
+let memoryStore = null;
+let memoryReady = Promise.resolve(false);
+
+try {
+  memoryStore = createPlayerMemoryStore({
+    enabled: process.env.PLAYER_MEMORY_ENABLED === 'true',
+    databaseUrl: process.env.DATABASE_URL,
+    hashSecret: process.env.PLAYER_HASH_SECRET,
+    ssl: process.env.PLAYER_DB_SSL === 'true'
+  });
+
+  if (memoryStore) {
+    memoryReady = memoryStore.init()
+      .then(() => {
+        console.log('[PLAYER MEMORY] Database ready');
+        return true;
+      })
+      .catch((error) => {
+        console.error(
+          '[PLAYER MEMORY DATABASE]',
+          error.message
+        );
+        return false;
+      });
+  }
+
+} catch (error) {
+  console.error(
+    '[PLAYER MEMORY CONFIG]',
+    error.message
+  );
+}
 
 // MARROW'S PERSONALITY AND STORY
 const STORY_INSTRUCTIONS = `
