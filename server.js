@@ -432,10 +432,12 @@ wss.on('connection', (ws) => {
 
   const history = [];
 
+
 const director = createDirector({
-  maxDurationMs: 270000,
+  maxDurationMs: 305000,
   keypadDurationMs: 90000
 });
+
 
 
   let pending = Promise.resolve();
@@ -511,7 +513,11 @@ const director = createDirector({
     }
   }
 
-  function finishChapter(outcome) {
+ 
+  // THE LAST CALL — SAVE FINAL OUTCOME
+  // Then return the caller to Ruth.
+
+  async function finishChapter(outcome) {
     if (closed || handoffSent) return;
 
     handoffSent = true;
@@ -524,13 +530,64 @@ const director = createDirector({
     }
     audioTimers.clear();
 
-    console.log('[CHAPTER 1 HANDOFF]', outcome);
+    const finalOutcome =
+      ['survived', 'dead', 'expired'].includes(outcome)
+        ? outcome
+        : 'expired';
 
-    send({
-      type: 'end',
-      handoffData: outcome
-    });
+    console.log('[CHAPTER 1 HANDOFF]', finalOutcome);
+
+    // Save only when the player opted in.
+    // Never keep Ruth waiting indefinitely.
+    if (
+      player.optedIn &&
+      player.dbReady &&
+      player.phone &&
+      player.runKey
+    ) {
+      let saveTimer;
+
+      try {
+        const timeout = new Promise(resolve => {
+          saveTimer = setTimeout(
+            () => resolve('timeout'),
+            1500
+          );
+        });
+
+        const result = await Promise.race([
+          savePlayerProgress(finalOutcome),
+          timeout
+        ]);
+
+        if (result === 'timeout') {
+          console.warn('[MEMORY] Ending save timed out');
+        } else {
+          console.log(
+            '[MEMORY] Ending save completed'
+          );
+        }
+
+      } catch (error) {
+        console.error(
+          '[MEMORY ENDING SAVE]',
+          error.message
+        );
+
+      } finally {
+        clearTimeout(saveTimer);
+      }
+    }
+
+    // Return to Ruth even if saving failed.
+    if (!closed) {
+      send({
+        type: 'end',
+        handoffData: finalOutcome
+      });
+    }
   }
+
 
     
     // THE LISTENER — CINEMATIC AUDIO DIRECTOR
@@ -1212,7 +1269,7 @@ if (msg.type === 'dtmf') {
 
     console.log(
       '[CHAPTER 1 VICTORY]',
-      director.snapshot().room
+      director.snapshot().location
     );
 
     playListenerSound('success');
