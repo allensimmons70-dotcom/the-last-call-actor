@@ -74,8 +74,11 @@ try {
     enabled: process.env.PLAYER_MEMORY_ENABLED === 'true',
     databaseUrl: process.env.DATABASE_URL,
     hashSecret: process.env.PLAYER_HASH_SECRET,
-    ssl: process.env.PLAYER_DB_SSL === 'true'
+    
+    ssl: process.env.PLAYER_DB_SSL === 'true',
+    schema: process.env.PLAYER_MEMORY_SCHEMA || 'public'
   });
+
 
   if (memoryStore) {
     memoryReady = memoryStore.init()
