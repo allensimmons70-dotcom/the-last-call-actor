@@ -457,6 +457,60 @@ const director = createDirector({
   let setupTask = Promise.resolve();
   let memoryWrites = Promise.resolve();
 
+  // THE LAST CALL — MEMORY SAVE QUEUE
+  function queueMemoryWrite(task) {
+    const next = memoryWrites.then(task);
+
+    memoryWrites = next.catch(error => {
+      console.error('[PLAYER MEMORY WRITE]', error.message);
+    });
+
+    return next;
+  }
+
+  function savePlayerProgress(outcome = null) {
+    if (
+      !player.optedIn ||
+      !player.dbReady ||
+      !player.phone ||
+      !player.runKey
+    ) {
+      return Promise.resolve(false);
+    }
+
+    return queueMemoryWrite(() => memoryStore.save({
+      phone: player.phone,
+      callSid: player.callSid,
+      runKey: player.runKey,
+      nickname: player.nickname,
+      outcome: outcome,
+      snapshot: director.snapshot()
+    }));
+  }
+
+  // Speak memory responses using MARROW'S ElevenLabs voice.
+  async function sayMemoryLine(words) {
+    try {
+      const source = await generateMarrowAudio(words);
+
+      if (!closed && !handoffSent) {
+        send({
+          type: 'play',
+          source,
+          loop: 1,
+          interruptible: true,
+          preemptible: true
+        });
+      }
+    } catch (error) {
+      console.error('[PLAYER MEMORY VOICE]', error.message);
+
+      if (!closed && !handoffSent) {
+        fallbackVoice(words);
+      }
+    }
+  }
+
   function finishChapter(outcome) {
     if (closed || handoffSent) return;
 
@@ -1227,6 +1281,99 @@ if (msg.type === 'dtmf') {
     pending = pending.then(async () => {
  await setupTask;
       if (closed) return;
+
+      // THE LAST CALL — MEMORY VOICE COMMANDS
+
+      const statedName = extractNickname(input);
+
+      if (statedName) {
+        player.nickname = statedName;
+
+        if (player.optedIn) {
+          savePlayerProgress(null).catch(error => {
+            console.error('[MEMORY NAME]', error.message);
+          });
+        }
+      }
+
+      const command = memoryCommand(input);
+
+      // FORGET ME — erase saved history
+      if (command === 'forget') {
+        player.optedIn = false;
+        player.previous = null;
+        player.nickname = null;
+
+        try {
+          if (player.dbReady && player.phone) {
+            await queueMemoryWrite(() =>
+              memoryStore.forget(player.phone)
+            );
+
+            await sayMemoryLine(
+              "Okay. I've erased your saved story. " +
+              "This call won't be remembered."
+            );
+          } else {
+            await sayMemoryLine(
+              "I won't save this call, but I can't " +
+              "access the records to confirm deletion."
+            );
+          }
+        } catch (error) {
+          console.error('[MEMORY DELETE]', error.message);
+
+          await sayMemoryLine(
+            "I couldn't confirm the deletion. " +
+            "Please try again later."
+          );
+        }
+
+        return;
+      }
+
+      // REMEMBER ME — save progress with consent
+      if (command === 'remember') {
+        if (
+          !player.dbReady ||
+          !player.phone ||
+          !player.runKey
+        ) {
+          await sayMemoryLine(
+            "I can't save your progress right now. " +
+            "But I'm still here. Don't hang up!"
+          );
+          return;
+        }
+
+        try {
+          player.optedIn = true;
+
+          const saved = await savePlayerProgress(null);
+          if (!saved) {
+            throw new Error('Memory save unavailable');
+          }
+
+          await sayMemoryLine(
+            "Okay. I'll remember you. " +
+            "Next time you call from this number, " +
+            "I'll know what happened down here. " +
+            "Say forget me anytime to erase it."
+          );
+
+        } catch (error) {
+          player.optedIn = false;
+
+          console.error('[MEMORY SAVE]', error.message);
+
+          await sayMemoryLine(
+            "Something went wrong. " +
+            "I couldn't save our progress."
+          );
+        }
+
+        return;
+      }
 
       history.push({
         role: 'user',
