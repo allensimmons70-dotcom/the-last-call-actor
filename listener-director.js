@@ -337,13 +337,25 @@ function createDirector({
     ].join('\n');
   }
 
-  function snapshot() {
-    return {
-      ...game,
-      lastMoves: [...game.lastMoves],
-      clues: [...game.clues]
-    };
-  }
+  
+function snapshot() {
+  return {
+    ...game,
+
+    // Translate director fields for player memory
+    location: game.room,
+    outcome: game.ending,
+
+    // Preserve both versions of story history
+    lastMoves: [...game.lastMoves],
+    recentMoves: [...game.lastMoves],
+
+    clues: [...game.clues]
+  };
+}
+
+
+
 
   return { act, press, tick, context, snapshot };
 }
