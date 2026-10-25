@@ -1530,69 +1530,71 @@ if (directorEvent.effect === 'success') {
   return;
 }
 
+        // MARROW THINKS — MEMORY-AWARE DIALOGUE
 
-        // MARROW THINKS
+        const memoryContext =
+          player.optedIn &&
+          player.previous &&
+          player.resumeConfirmed
+            ? [
+                'This caller confirmed their saved story.',
+                'Saved nickname: ' +
+                  (player.nickname || 'not supplied'),
+                'Previous outcome: ' +
+                  (player.previous.lastOutcome || 'unfinished'),
+                'Previous story decisions: ' +
+                  (
+                    Array.isArray(
+                      player.previous.lastSnapshot?.recentMoves
+                    )
+                      ? player.previous.lastSnapshot.recentMoves
+                          .slice(-3).join('; ')
+                      : 'none stored'
+                  )
+              ].join('\n')
+            : 'No confirmed saved history. ' +
+              'Never invent previous calls.';
+
         const response = await openai.responses.create({
           model: MODEL,
-          
-instructions: `${STORY_INSTRUCTIONS}
 
-${director.context()}
+          instructions: [
+            STORY_INSTRUCTIONS,
+            director.context(),
 
-RETURNING PLAYER MEMORY — PREVIOUS CALL ONLY:
+            'RETURNING PLAYER MEMORY:\n' +
+              memoryContext,
 
-player.optedIn && player.previous && player.resumeConfirmed
-  ? `This caller previously asked to save progress.
+            'MEMORY RULES:\n' +
+              'Only reference previous calls after ' +
+              'the caller confirms they want to resume. ' +
+              'Never claim to recognize their voice. ' +
+              'Previous inventory and puzzles do not ' +
+              'carry into a new attempt.',
 
-Saved nickname: ${player.nickname || 'not supplied'}.
+            'LATEST DIRECTOR EVENT:\n' +
+              (
+                directorEvent.handled
+                  ? directorEvent.text
+                  : 'No physical game action was completed.'
+              ),
 
-Previous chapter outcome:
-${player.previous.lastOutcome || 'unfinished'}.
-
-Previous in-story decisions:
-${Array.isArray(player.previous.lastSnapshot?.recentMoves)
-  ? player.previous.lastSnapshot.recentMoves
-      .slice(-3).join('; ')
-  : 'none stored'}.`
-  : 'No saved history. Never invent previous calls.'}
-
-MEMORY RULES:
-You may naturally reference previous story events,
-especially if the caller brings them up.
-
-Be emotional, not robotic.
-Do not read the saved information like a report.
-
-Previous inventory and completed puzzles do not
-carry into the new attempt.
-
-A phone number does not prove someone's identity.
-Before revealing saved details, confirm the caller
-wants to continue the previous story.
-
-Never claim to recognize the caller's voice.
-
-
-LATEST DIRECTOR EVENT:
-${directorEvent.handled
-  ? directorEvent.text
-  : 'No physical game action was completed.'}
-
-IMPORTANT RULES:
-The Director is the authority on physical reality.
-React naturally and emotionally to its events.
-Do not contradict the Director's current room.
-Do not invent completed actions or discoveries.
-Never reveal hidden clues or puzzle solutions.
-Never invent an escape.
-Keep your own personality, fear, humor and voice.
-`,
+            'IMPORTANT RULES:\n' +
+              'The Director controls physical reality. ' +
+              'React naturally and emotionally. ' +
+              'Do not contradict the current room. ' +
+              'Never invent completed actions, ' +
+              'hidden clues, or an escape. ' +
+              'Stay frightened, funny, and human.'
+          ].join('\n\n'),
 
           input: history.slice(-16),
           max_output_tokens: 140,
           store: false
         });
 
+
+       
         const reply =
           (response.output_text || '').trim() ||
           'Wait... I heard something. Say that again.';
