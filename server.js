@@ -443,6 +443,20 @@ const director = createDirector({
   
   let handoffSent = false;
 
+  // THE LAST CALL — CURRENT PLAYER
+  const player = {
+    phone: null,
+    callSid: null,
+    runKey: null,
+    nickname: null,
+    optedIn: false,
+    previous: null,
+    dbReady: false
+  };
+
+  let setupTask = Promise.resolve();
+  let memoryWrites = Promise.resolve();
+
   function finishChapter(outcome) {
     if (closed || handoffSent) return;
 
@@ -999,34 +1013,102 @@ now >= activeSoundUntil
 
     
 if (msg.type === 'setup') {
-  console.log('MARROW custom voice session connected');
+  console.log('[MARROW] Caller connected');
 
-  const intro = "Hello? HELLO?! Oh, thank God, somebody answered. Listen, I don't know who you are, but I'm trapped down here. There's something outside this door... and I think it knows I'm here. Can you help me?";
+  player.phone = normalizePhone(msg.from);
+  player.callSid =
+    typeof msg.callSid === 'string'
+      ? msg.callSid
+      : null;
 
-  const introVersion = requestVersion;
+  setupTask = (async () => {
+    player.dbReady = await memoryReady;
 
-  generateMarrowAudio(intro)
-    .then((mediaUrl) => {
-      if (closed || requestVersion !== introVersion) return;
+    if (player.dbReady && player.phone) {
+      player.runKey = memoryStore.runKeyFor(
+        player.callSid,
+        player.phone
+      );
+
+      try {
+        player.previous = await memoryStore.load(
+          player.phone
+        );
+
+        if (player.previous) {
+          player.optedIn = true;
+          player.nickname = player.previous.nickname;
+          console.log('[MEMORY] Returning player found');
+        }
+
+      } catch (error) {
+        player.dbReady = false;
+        console.error(
+          '[MEMORY LOOKUP]',
+          error.message
+        );
+      }
+    }
+
+    const intro = player.previous
+      ? (
+        "Hello? HELLO?! Wait... " +
+        "I think this number has called before. " +
+        "Is that you again? " +
+        "I'm trapped down here, and something " +
+        "is outside this door. Can you help me?"
+      )
+      : (
+        "Hello? HELLO?! Oh, thank God, " +
+        "somebody answered. Listen, I don't " +
+        "know who you are, but I'm trapped " +
+        "down here. There's something outside " +
+        "this door... and I think it knows " +
+        "I'm here. Can you help me?"
+      );
+
+    const introVersion = requestVersion;
+
+    try {
+      const mediaUrl = await generateMarrowAudio(intro);
+
+      if (
+        closed ||
+        handoffSent ||
+        requestVersion !== introVersion
+      ) return;
 
       send({
         type: 'play',
         source: mediaUrl,
         loop: 1,
-        interruptible: !lockScene,
-preemptible: !lockScene
+        interruptible: true,
+        preemptible: true
       });
-    })
-    .catch((error) => {
-      console.error('MARROW opening failed:', error.message);
 
-      if (!closed && requestVersion === introVersion) {
+    } catch (error) {
+      console.error(
+        '[MARROW INTRO]',
+        error.message
+      );
+
+      if (
+        !closed &&
+        !handoffSent &&
+        requestVersion === introVersion
+      ) {
         fallbackVoice(intro);
       }
-    });
+    }
+  })();
+
+  setupTask.catch(error => {
+    console.error('[MEMORY SETUP]', error.message);
+  });
 
   return;
 }
+
 
 
     if (msg.type === 'error') {
@@ -1143,7 +1225,7 @@ if (msg.type === 'dtmf') {
 
     // Process conversations in order.
     pending = pending.then(async () => {
-
+ await setupTask;
       if (closed) return;
 
       history.push({
