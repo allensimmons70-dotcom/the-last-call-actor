@@ -15,6 +15,7 @@ const OpenAI = require('openai');
 const { createDirector } = require('./listener-director');
 const { getListenerSound } = require('./listener-sounds');
 const twilio = require('twilio');
+const ruthPending = require('./ruth-pending');
 
 const {
   createPlayerMemoryStore,
@@ -518,9 +519,8 @@ const director = createDirector({
   }
 
  
-  // THE LAST CALL — SAVE FINAL OUTCOME
-  // Then return the caller to Ruth.
-
+ 
+  // THE LAST CALL — STAGE THE ENDING FOR RUTH
   async function finishChapter(outcome) {
     if (closed || handoffSent) return;
 
@@ -541,49 +541,29 @@ const director = createDirector({
 
     console.log('[CHAPTER 1 HANDOFF]', finalOutcome);
 
-    // Save only when the player opted in.
-    // Never keep Ruth waiting indefinitely.
-    if (
-      player.optedIn &&
+    // Only hold the completed story temporarily.
+    // Ruth obtains saving consent after the game.
+    const staged = (
       player.dbReady &&
       player.phone &&
+      player.callSid &&
       player.runKey
-    ) {
-      let saveTimer;
+    ) ? ruthPending.stage({
+      callSid: player.callSid,
+      phone: player.phone,
+      secret: process.env.PLAYER_HASH_SECRET,
+      runKey: player.runKey,
+      nickname: player.nickname,
+      outcome: finalOutcome,
+      snapshot: director.snapshot()
+    }) : false;
 
-      try {
-        const timeout = new Promise(resolve => {
-          saveTimer = setTimeout(
-            () => resolve('timeout'),
-            1500
-          );
-        });
+    console.log(
+      '[RUTH MEMORY] Temporary story staged:',
+      Boolean(staged)
+    );
 
-        const result = await Promise.race([
-          savePlayerProgress(finalOutcome),
-          timeout
-        ]);
-
-        if (result === 'timeout') {
-          console.warn('[MEMORY] Ending save timed out');
-        } else {
-          console.log(
-            '[MEMORY] Ending save completed'
-          );
-        }
-
-      } catch (error) {
-        console.error(
-          '[MEMORY ENDING SAVE]',
-          error.message
-        );
-
-      } finally {
-        clearTimeout(saveTimer);
-      }
-    }
-
-    // Return to Ruth even if saving failed.
+    // Ruth regains control of the call.
     if (!closed) {
       send({
         type: 'end',
