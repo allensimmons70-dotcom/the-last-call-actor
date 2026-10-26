@@ -197,8 +197,168 @@ const cleanupTimer = setInterval(cleanupAudio, 30000);
 cleanupTimer.unref();
 
 // RENDER WEB SERVER
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   
+  // RUTH'S MEMORY DESK — STAGING ONLY
+  // Save only after the caller chooses Press 1.
+
+  if ((req.url || '').split('?')[0] === '/ruth/memory/save') {
+
+    const reply = (status, body) => {
+      res.writeHead(status, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store'
+      });
+      return res.end(JSON.stringify(body));
+    };
+
+    if (req.method !== 'POST') {
+      return reply(405, {
+        saved: false,
+        reason: 'method_not_allowed'
+      });
+    }
+
+    // Never activate this test endpoint in production.
+    if (
+      process.env.PLAYER_MEMORY_SCHEMA !== 'last_call_staging' ||
+      process.env.PLAYER_MEMORY_ENABLED !== 'true'
+    ) {
+      return reply(503, {
+        saved: false,
+        reason: 'not_enabled'
+      });
+    }
+
+    // Verify the private token shared with Ruth's Function.
+    const expected = process.env.RUTH_MEMORY_TOKEN || '';
+    const auth = req.headers.authorization || '';
+    const supplied = auth.startsWith('Bearer ')
+      ? auth.slice(7)
+      : '';
+
+    const a = Buffer.from(expected);
+    const b = Buffer.from(supplied);
+
+    if (
+      expected.length < 32 ||
+      a.length !== b.length ||
+      !require('node:crypto').timingSafeEqual(a, b)
+    ) {
+      return reply(401, {
+        saved: false,
+        reason: 'unauthorized'
+      });
+    }
+
+    try {
+      // Limit the request size.
+      const chunks = [];
+      let totalBytes = 0;
+
+      for await (const chunk of req) {
+        totalBytes += chunk.length;
+
+        if (totalBytes > 2048) {
+          return reply(413, {
+            saved: false,
+            reason: 'too_large'
+          });
+        }
+
+        chunks.push(chunk);
+      }
+
+      const body = JSON.parse(
+        Buffer.concat(chunks).toString('utf8')
+      );
+
+      const { callSid, from, outcome } = body || {};
+
+      if (
+        typeof callSid !== 'string' ||
+        !/^CA[a-f0-9]{32}$/i.test(callSid) ||
+        typeof from !== 'string' ||
+        !/^\+[1-9]\d{7,14}$/.test(from) ||
+        !['survived', 'dead', 'expired'].includes(outcome)
+      ) {
+        return reply(400, {
+          saved: false,
+          reason: 'invalid_request'
+        });
+      }
+
+      if (!(await memoryReady)) {
+        return reply(503, {
+          saved: false,
+          reason: 'database_unavailable'
+        });
+      }
+
+      // Only a story that Marrow actually finished can be saved.
+      const staged = ruthPending.read(
+        callSid,
+        from,
+        process.env.PLAYER_HASH_SECRET
+      );
+
+      if (!staged || staged.outcome !== outcome) {
+        return reply(409, {
+          saved: false,
+          reason: 'no_matching_story'
+        });
+      }
+
+      if (staged.saving) {
+        return reply(409, {
+          saved: false,
+          reason: 'save_in_progress'
+        });
+      }
+
+      staged.saving = true;
+
+      try {
+        await memoryStore.save({
+          phone: from,
+          callSid,
+          runKey: staged.runKey,
+          nickname: staged.nickname,
+          outcome: staged.outcome,
+          snapshot: staged.snapshot
+        });
+
+        ruthPending.discard(
+          callSid,
+          from,
+          process.env.PLAYER_HASH_SECRET
+        );
+
+        console.log('[RUTH MEMORY] Caller-approved story saved');
+
+        return reply(200, {
+          saved: true,
+          reason: 'saved'
+        });
+
+      } catch (error) {
+        staged.saving = false;
+        throw error;
+      }
+
+    } catch (error) {
+      console.error(
+        '[RUTH MEMORY SAVE FAILED]',
+        error.message
+      );
+
+      return reply(503, {
+        saved: false,
+        reason: 'save_failed'
+      });
+    }
+  }
+
  
   // THE LISTENER — Real MP3 sound library
 
