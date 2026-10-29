@@ -6,12 +6,16 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js",
+    "test": "node --test replay-entitlement.test.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "openai": "^6.0.0",
     "twilio": "^5.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "pg": "^8.13.0"
   }
 }

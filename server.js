@@ -15,6 +15,7 @@ const OpenAI = require('openai');
 const { createDirector } = require('./listener-director');
 const { getListenerSound } = require('./listener-sounds');
 const twilio = require('twilio');
+const { createReplayEntitlementLookup } = require('./replay-entitlement');
 
 const PORT = Number(process.env.PORT || 10000);
 const PUBLIC_WSS_URL = process.env.PUBLIC_WSS_URL;
@@ -52,6 +53,14 @@ const PUBLIC_HTTPS_ORIGIN = PUBLIC_WSS_URL
 
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY
+});
+
+// Sandbox only: disabled unless explicitly enabled in the *test* Render service.
+const replayLookup = createReplayEntitlementLookup({
+  enabled: process.env.REPLAY_LOOKUP_ENABLED === 'true',
+  databaseUrl: process.env.REPLAY_DATABASE_URL,
+  hashSecret: process.env.REPLAY_HASH_SECRET,
+  ssl: process.env.REPLAY_DB_SSL === 'true'
 });
 
 // MARROW'S PERSONALITY AND STORY
@@ -956,30 +965,34 @@ now >= activeSoundUntil
 if (msg.type === 'setup') {
   console.log('MARROW custom voice session connected');
 
-  const intro = "Hello? HELLO?! Oh, thank God, somebody answered. Listen, I don't know who you are, but I'm trapped down here. There's something outside this door... and I think it knows I'm here. Can you help me?";
-
   const introVersion = requestVersion;
+  const regularIntro = "Hello? HELLO?! Oh, thank God, somebody answered. Listen, I don't know who you are, but I'm trapped down here. There's something outside this door... and I think it knows I'm here. Can you help me?";
 
-  generateMarrowAudio(intro)
-    .then((mediaUrl) => {
+  // Caller ID arrives from Twilio's setup message after the signed WebSocket
+  // handshake. It is a convenience identifier, NOT proof of phone ownership.
+  // This does not customize Ruth's earlier Studio greeting.
+  void (async () => {
+    const hasPass = await replayLookup.hasActivePass(msg.from);
+    if (closed || requestVersion !== introVersion) return;
+    if (hasPass) console.log('[REPLAY] Active sandbox entitlement recognized');
+    const intro = hasPass
+      ? "Hello? You're back?! Ruth reopened your file? Thank God. I'm still trapped down here, and that THING is still outside the door. Help me get out this time!"
+      : regularIntro;
+    try {
+      const mediaUrl = await generateMarrowAudio(intro);
       if (closed || requestVersion !== introVersion) return;
-
       send({
-        type: 'play',
-        source: mediaUrl,
-        loop: 1,
-        interruptible: !lockScene,
-preemptible: !lockScene
+        type: 'play', source: mediaUrl, loop: 1,
+        interruptible: !lockScene, preemptible: !lockScene
       });
-    })
-    .catch((error) => {
+    } catch (error) {
       console.error('MARROW opening failed:', error.message);
-
-      if (!closed && requestVersion === introVersion) {
-        fallbackVoice(intro);
-      }
-    });
-
+      if (!closed && requestVersion === introVersion) fallbackVoice(intro);
+    }
+  })().catch((error) => {
+    console.error('[REPLAY] Opening fallback:', error.code || 'unexpected-error');
+    if (!closed && requestVersion === introVersion) fallbackVoice(regularIntro);
+  });
   return;
 }
 
